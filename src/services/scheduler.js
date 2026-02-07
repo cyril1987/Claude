@@ -1,0 +1,86 @@
+const db = require('../db');
+const { checkMonitor } = require('./checker');
+const { evaluateAndNotify } = require('./notifier');
+const config = require('../config');
+
+let running = false;
+let intervalHandle = null;
+let lastCleanup = 0;
+
+const getDueMonitors = db.prepare(`
+  SELECT * FROM monitors
+  WHERE is_active = 1
+  AND (
+    last_checked_at IS NULL
+    OR datetime(last_checked_at, '+' || frequency_seconds || ' seconds') <= datetime('now')
+  )
+`);
+
+const deleteOldChecks = db.prepare(
+  "DELETE FROM checks WHERE checked_at < datetime('now', '-' || ? || ' days')"
+);
+
+function start() {
+  if (running) return;
+  running = true;
+  console.log(`[SCHEDULER] Started (tick every ${config.schedulerIntervalMs}ms)`);
+  tick();
+  intervalHandle = setInterval(tick, config.schedulerIntervalMs);
+}
+
+async function tick() {
+  if (!running) return;
+
+  try {
+    const dueMonitors = getDueMonitors.all();
+
+    if (dueMonitors.length > 0) {
+      console.log(`[SCHEDULER] Checking ${dueMonitors.length} monitor(s)`);
+    }
+
+    const CONCURRENCY = 10;
+    for (let i = 0; i < dueMonitors.length; i += CONCURRENCY) {
+      const batch = dueMonitors.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map(async (monitor) => {
+          const result = await checkMonitor(monitor);
+          await evaluateAndNotify(monitor, result);
+          const icon = result.isSuccess ? 'OK' : 'FAIL';
+          console.log(
+            `[CHECK] ${icon} ${monitor.name} (${monitor.url}) - ${result.responseTimeMs}ms`
+          );
+        })
+      );
+
+      for (const r of results) {
+        if (r.status === 'rejected') {
+          console.error('[SCHEDULER] Unexpected check error:', r.reason);
+        }
+      }
+    }
+
+    maybeCleanup();
+  } catch (err) {
+    console.error('[SCHEDULER] Tick error:', err);
+  }
+}
+
+function maybeCleanup() {
+  if (Date.now() - lastCleanup < 3600000) return;
+  lastCleanup = Date.now();
+  const result = deleteOldChecks.run(config.checkRetentionDays);
+  if (result.changes > 0) {
+    console.log(`[SCHEDULER] Cleaned up ${result.changes} old check records`);
+  }
+}
+
+function stop() {
+  running = false;
+  if (intervalHandle) {
+    clearInterval(intervalHandle);
+    intervalHandle = null;
+  }
+  console.log('[SCHEDULER] Stopped');
+}
+
+module.exports = { start, stop };

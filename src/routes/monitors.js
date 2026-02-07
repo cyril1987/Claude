@@ -1,0 +1,165 @@
+const express = require('express');
+const router = express.Router();
+const db = require('../db');
+const { validateMonitor } = require('../middleware/validate');
+
+// List all monitors with 24h stats
+router.get('/', (req, res) => {
+  const monitors = db.prepare(`
+    SELECT m.*,
+      (SELECT ROUND(
+        CAST(SUM(CASE WHEN c.is_success = 1 THEN 1 ELSE 0 END) AS REAL) /
+        NULLIF(COUNT(*), 0) * 100, 1)
+       FROM checks c
+       WHERE c.monitor_id = m.id
+         AND c.checked_at > datetime('now', '-1 day')
+      ) AS uptime_percent_24h,
+      (SELECT ROUND(AVG(c.response_time_ms), 0)
+       FROM checks c
+       WHERE c.monitor_id = m.id
+         AND c.is_success = 1
+         AND c.checked_at > datetime('now', '-1 day')
+      ) AS avg_response_ms_24h
+    FROM monitors m
+    ORDER BY m.created_at DESC
+  `).all();
+
+  res.json(monitors.map(formatMonitor));
+});
+
+// Get single monitor
+router.get('/:id', (req, res) => {
+  const monitor = db.prepare(`
+    SELECT m.*,
+      (SELECT ROUND(
+        CAST(SUM(CASE WHEN c.is_success = 1 THEN 1 ELSE 0 END) AS REAL) /
+        NULLIF(COUNT(*), 0) * 100, 1)
+       FROM checks c
+       WHERE c.monitor_id = m.id
+         AND c.checked_at > datetime('now', '-1 day')
+      ) AS uptime_percent_24h,
+      (SELECT ROUND(AVG(c.response_time_ms), 0)
+       FROM checks c
+       WHERE c.monitor_id = m.id
+         AND c.is_success = 1
+         AND c.checked_at > datetime('now', '-1 day')
+      ) AS avg_response_ms_24h
+    FROM monitors m
+    WHERE m.id = ?
+  `).get(req.params.id);
+
+  if (!monitor) {
+    return res.status(404).json({ error: 'Monitor not found' });
+  }
+
+  res.json(formatMonitor(monitor));
+});
+
+// Create a new monitor
+router.post('/', validateMonitor, (req, res) => {
+  const { url, name, frequency, expectedStatus, timeoutMs, notifyEmail } = req.body;
+
+  const result = db.prepare(`
+    INSERT INTO monitors (url, name, frequency_seconds, expected_status, timeout_ms, notify_email)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    url,
+    name || new URL(url).hostname,
+    frequency || 300,
+    expectedStatus || 200,
+    timeoutMs || 10000,
+    notifyEmail
+  );
+
+  const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json(formatMonitor(monitor));
+});
+
+// Update a monitor
+router.put('/:id', validateMonitor, (req, res) => {
+  const existing = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Monitor not found' });
+  }
+
+  const { url, name, frequency, expectedStatus, timeoutMs, notifyEmail } = req.body;
+
+  db.prepare(`
+    UPDATE monitors
+    SET url = ?, name = ?, frequency_seconds = ?, expected_status = ?,
+        timeout_ms = ?, notify_email = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    url,
+    name || new URL(url).hostname,
+    frequency || 300,
+    expectedStatus || 200,
+    timeoutMs || 10000,
+    notifyEmail,
+    req.params.id
+  );
+
+  const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
+  res.json(formatMonitor(monitor));
+});
+
+// Delete a monitor
+router.delete('/:id', (req, res) => {
+  const existing = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Monitor not found' });
+  }
+
+  db.prepare('DELETE FROM monitors WHERE id = ?').run(req.params.id);
+  res.status(204).end();
+});
+
+// Pause a monitor
+router.post('/:id/pause', (req, res) => {
+  const result = db.prepare(
+    'UPDATE monitors SET is_active = 0, updated_at = datetime(\'now\') WHERE id = ?'
+  ).run(req.params.id);
+
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Monitor not found' });
+  }
+
+  const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
+  res.json(formatMonitor(monitor));
+});
+
+// Resume a monitor
+router.post('/:id/resume', (req, res) => {
+  const result = db.prepare(
+    'UPDATE monitors SET is_active = 1, updated_at = datetime(\'now\') WHERE id = ?'
+  ).run(req.params.id);
+
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Monitor not found' });
+  }
+
+  const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
+  res.json(formatMonitor(monitor));
+});
+
+function formatMonitor(row) {
+  return {
+    id: row.id,
+    url: row.url,
+    name: row.name,
+    frequencySeconds: row.frequency_seconds,
+    expectedStatus: row.expected_status,
+    timeoutMs: row.timeout_ms,
+    notifyEmail: row.notify_email,
+    isActive: row.is_active === 1,
+    currentStatus: row.current_status,
+    lastCheckedAt: row.last_checked_at,
+    lastStatusChangeAt: row.last_status_change_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    uptimePercent24h: row.uptime_percent_24h ?? null,
+    avgResponseMs24h: row.avg_response_ms_24h ?? null,
+  };
+}
+
+module.exports = router;
