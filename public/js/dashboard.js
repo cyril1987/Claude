@@ -75,6 +75,13 @@ const Dashboard = {
           ? new Date(m.lastCheckedAt + 'Z').toLocaleString()
           : 'Never';
 
+        let downtimeInfo = '';
+        if (!m.isActive && m.pausedUntil) {
+          downtimeInfo = `<div class="card-downtime-info" data-until="${m.pausedUntil}">&#9208; Resumes at ${new Date(m.pausedUntil + 'Z').toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</div>`;
+        } else if (!m.isActive) {
+          downtimeInfo = '<div class="card-downtime-info">&#9208; Paused indefinitely</div>';
+        }
+
         html += `
           <a href="#/${m.id}" class="monitor-card status-${statusClass}">
             <div class="card-header">
@@ -85,6 +92,7 @@ const Dashboard = {
               </span>
             </div>
             <div class="card-url">${escapeHtml(m.url)}</div>
+            ${downtimeInfo}
             <div class="card-stats">
               <div class="card-stat-item">
                 <span class="stat-label">Uptime (24h): </span>
