@@ -44,12 +44,6 @@ function findOrCreateUser(provider, providerId, email, displayName, avatarUrl) {
         `INSERT INTO users (${idColumn}, email, name, avatar_url) VALUES (?, ?, ?, ?)`
       ).run(providerId, email, displayName, avatarUrl);
       user = { id: result.lastInsertRowid };
-
-      // Assign any orphaned monitors (user_id IS NULL) to the first user
-      const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
-      if (userCount === 1) {
-        db.prepare('UPDATE monitors SET user_id = ? WHERE user_id IS NULL').run(user.id);
-      }
     }
   }
 

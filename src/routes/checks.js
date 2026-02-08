@@ -2,9 +2,9 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// Get paginated check history for a monitor (ownership check)
+// Get paginated check history for a monitor
 router.get('/monitors/:id/checks', (req, res) => {
-  const monitorExists = db.prepare('SELECT id FROM monitors WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  const monitorExists = db.prepare('SELECT id FROM monitors WHERE id = ?').get(req.params.id);
   if (!monitorExists) {
     return res.status(404).json({ error: 'Monitor not found' });
   }
@@ -31,9 +31,9 @@ router.get('/monitors/:id/checks', (req, res) => {
   });
 });
 
-// Get latest N checks (for sparklines) — ownership check
+// Get latest N checks (for sparklines)
 router.get('/monitors/:id/checks/latest', (req, res) => {
-  const monitorExists = db.prepare('SELECT id FROM monitors WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  const monitorExists = db.prepare('SELECT id FROM monitors WHERE id = ?').get(req.params.id);
   if (!monitorExists) {
     return res.status(404).json({ error: 'Monitor not found' });
   }
@@ -50,9 +50,9 @@ router.get('/monitors/:id/checks/latest', (req, res) => {
   res.json(checks.reverse().map(formatCheck));
 });
 
-// Get aggregated stats for a monitor — ownership check
+// Get aggregated stats for a monitor
 router.get('/monitors/:id/stats', (req, res) => {
-  const monitorExists = db.prepare('SELECT id FROM monitors WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  const monitorExists = db.prepare('SELECT id FROM monitors WHERE id = ?').get(req.params.id);
   if (!monitorExists) {
     return res.status(404).json({ error: 'Monitor not found' });
   }
