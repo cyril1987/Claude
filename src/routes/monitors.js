@@ -5,7 +5,7 @@ const { validateMonitor } = require('../middleware/validate');
 const { checkMonitor } = require('../services/checker');
 const { evaluateAndNotify } = require('../services/notifier');
 
-// List all monitors with 24h stats
+// List all monitors with 24h stats (shared across all users)
 router.get('/', (req, res) => {
   const monitors = db.prepare(`
     SELECT m.*,
@@ -116,10 +116,10 @@ router.delete('/:id', (req, res) => {
   res.status(204).end();
 });
 
-// Pause a monitor (indefinite)
+// Pause a monitor
 router.post('/:id/pause', (req, res) => {
   const result = db.prepare(
-    'UPDATE monitors SET is_active = 0, paused_until = NULL, updated_at = datetime(\'now\') WHERE id = ?'
+    "UPDATE monitors SET is_active = 0, paused_until = NULL, updated_at = datetime('now') WHERE id = ?"
   ).run(req.params.id);
 
   if (result.changes === 0) {
@@ -133,7 +133,7 @@ router.post('/:id/pause', (req, res) => {
 // Resume a monitor
 router.post('/:id/resume', (req, res) => {
   const result = db.prepare(
-    'UPDATE monitors SET is_active = 1, paused_until = NULL, updated_at = datetime(\'now\') WHERE id = ?'
+    "UPDATE monitors SET is_active = 1, paused_until = NULL, updated_at = datetime('now') WHERE id = ?"
   ).run(req.params.id);
 
   if (result.changes === 0) {
@@ -161,14 +161,12 @@ router.post('/:id/downtime', (req, res) => {
   }
 
   if (duration === 0) {
-    // Indefinite pause
     db.prepare(
-      'UPDATE monitors SET is_active = 0, paused_until = NULL, updated_at = datetime(\'now\') WHERE id = ?'
+      "UPDATE monitors SET is_active = 0, paused_until = NULL, updated_at = datetime('now') WHERE id = ?"
     ).run(req.params.id);
   } else {
-    // Timed downtime
     db.prepare(
-      'UPDATE monitors SET is_active = 0, paused_until = datetime(\'now\', \'+\' || ? || \' seconds\'), updated_at = datetime(\'now\') WHERE id = ?'
+      "UPDATE monitors SET is_active = 0, paused_until = datetime('now', '+' || ? || ' seconds'), updated_at = datetime('now') WHERE id = ?"
     ).run(duration, req.params.id);
   }
 

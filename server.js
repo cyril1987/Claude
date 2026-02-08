@@ -1,8 +1,14 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const session = require('express-session');
+const SqliteStore = require('better-sqlite3-session-store')(session);
 const config = require('./src/config');
+const db = require('./src/db');
+const passport = require('./src/auth');
 const scheduler = require('./src/services/scheduler');
+const authRouter = require('./src/routes/auth');
+const requireAuth = require('./src/middleware/requireAuth');
 const monitorsRouter = require('./src/routes/monitors');
 const checksRouter = require('./src/routes/checks');
 const settingsRouter = require('./src/routes/settings');
@@ -11,6 +17,33 @@ const app = express();
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Session management
+app.use(session({
+  store: new SqliteStore({
+    client: db,
+    expired: { clear: true, intervalMs: 900000 },
+  }),
+  secret: config.session.secret,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    sameSite: 'lax',
+  },
+}));
+
+// Passport initialization
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Auth routes (public — before requireAuth)
+app.use(authRouter);
+
+// Protect all API routes
+app.use('/api', requireAuth);
 
 app.use('/api/monitors', monitorsRouter);
 app.use('/api', checksRouter);
