@@ -81,6 +81,25 @@ const Dashboard = {
 
       const hasMultipleGroups = groupNames.length > 1 || (groupNames.length === 1 && groupNames[0] !== 'null');
 
+      // Expand / Collapse all toggle
+      if (hasMultipleGroups) {
+        const allCollapsed = groupNames.every(gName => {
+          const gId = gName === 'null' ? '__ungrouped__' : gName;
+          return Dashboard.collapsedGroups.has(gId);
+        });
+        const toggleLabel = allCollapsed ? 'Expand All' : 'Collapse All';
+        const toggleIcon = allCollapsed
+          ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>'
+          : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+        html += `
+          <div class="group-controls">
+            <button class="group-controls-btn" id="toggle-all-groups">
+              ${toggleIcon} ${toggleLabel}
+            </button>
+          </div>
+        `;
+      }
+
       for (const gName of groupNames) {
         const groupMonitors = groups[gName];
         const isUngrouped = gName === 'null';
@@ -114,6 +133,15 @@ const Dashboard = {
                 </div>
               </div>
           `;
+
+          // Show sparklines row when collapsed
+          if (isCollapsed) {
+            html += '<div class="group-sparkline-row">';
+            for (const m of groupMonitors) {
+              html += `<canvas data-group-sparkline="${m.id}" title="${escapeHtml(m.name)}"></canvas>`;
+            }
+            html += '</div>';
+          }
         }
 
         if (!isCollapsed || !hasMultipleGroups) {
@@ -130,6 +158,22 @@ const Dashboard = {
 
     container.innerHTML = html;
 
+    // Attach expand/collapse all toggle
+    const toggleAllBtn = document.getElementById('toggle-all-groups');
+    if (toggleAllBtn) {
+      toggleAllBtn.addEventListener('click', () => {
+        const groupIds = [];
+        container.querySelectorAll('.group-header').forEach(h => groupIds.push(h.dataset.groupId));
+        const allCollapsed = groupIds.every(id => Dashboard.collapsedGroups.has(id));
+        if (allCollapsed) {
+          Dashboard.collapsedGroups.clear();
+        } else {
+          groupIds.forEach(id => Dashboard.collapsedGroups.add(id));
+        }
+        Dashboard.renderContent(container, monitors);
+      });
+    }
+
     // Attach group toggle listeners
     container.querySelectorAll('.group-header').forEach(header => {
       header.addEventListener('click', () => {
@@ -143,10 +187,16 @@ const Dashboard = {
       });
     });
 
-    // Load sparklines
+    // Load sparklines for expanded monitor cards
     for (const m of monitors) {
       Dashboard.loadSparkline(m.id);
     }
+
+    // Load sparklines for collapsed group rows
+    container.querySelectorAll('canvas[data-group-sparkline]').forEach(canvas => {
+      const monitorId = canvas.dataset.groupSparkline;
+      Dashboard.loadGroupSparkline(monitorId, canvas);
+    });
   },
 
   renderMonitorCards(monitors) {
@@ -242,6 +292,19 @@ const Dashboard = {
       );
       const canvas = document.querySelector(
         `canvas[data-monitor-id="${monitorId}"]`
+      );
+      if (canvas && checks.length > 0) {
+        Chart.sparkline(canvas, checks);
+      }
+    } catch (e) {
+      // Sparkline loading is best-effort
+    }
+  },
+
+  async loadGroupSparkline(monitorId, canvas) {
+    try {
+      const checks = await API.get(
+        `/monitors/${monitorId}/checks/latest?limit=20`
       );
       if (canvas && checks.length > 0) {
         Chart.sparkline(canvas, checks);

@@ -1045,6 +1045,35 @@ select.staging-cell-input {
   color: var(--color-down);
 }
 
+/* Group Controls */
+.group-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.group-controls-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: 1px solid var(--color-card-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: inherit;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.group-controls-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-secondary);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
 /* Monitor Groups */
 .group-section {
   margin-bottom: 0.5rem;
@@ -1062,6 +1091,21 @@ select.staging-cell-input {
   user-select: none;
   transition: background 0.15s;
   margin-bottom: 0.5rem;
+}
+
+.group-sparkline-row {
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 24px;
+  padding: 0 1rem 0.5rem;
+  margin-top: -0.25rem;
+}
+
+.group-sparkline-row canvas {
+  height: 24px;
+  flex: 1;
+  min-width: 0;
 }
 
 .group-header:hover {
