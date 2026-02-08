@@ -5,7 +5,7 @@ const { validateMonitor } = require('../middleware/validate');
 const { checkMonitor } = require('../services/checker');
 const { evaluateAndNotify } = require('../services/notifier');
 
-// List all monitors with 24h stats
+// List all monitors with 24h stats (scoped to current user)
 router.get('/', (req, res) => {
   const monitors = db.prepare(`
     SELECT m.*,
@@ -23,13 +23,14 @@ router.get('/', (req, res) => {
          AND c.checked_at > datetime('now', '-1 day')
       ) AS avg_response_ms_24h
     FROM monitors m
+    WHERE m.user_id = ?
     ORDER BY m.created_at DESC
-  `).all();
+  `).all(req.user.id);
 
   res.json(monitors.map(formatMonitor));
 });
 
-// Get single monitor
+// Get single monitor (ownership check)
 router.get('/:id', (req, res) => {
   const monitor = db.prepare(`
     SELECT m.*,
@@ -47,8 +48,8 @@ router.get('/:id', (req, res) => {
          AND c.checked_at > datetime('now', '-1 day')
       ) AS avg_response_ms_24h
     FROM monitors m
-    WHERE m.id = ?
-  `).get(req.params.id);
+    WHERE m.id = ? AND m.user_id = ?
+  `).get(req.params.id, req.user.id);
 
   if (!monitor) {
     return res.status(404).json({ error: 'Monitor not found' });
@@ -57,29 +58,30 @@ router.get('/:id', (req, res) => {
   res.json(formatMonitor(monitor));
 });
 
-// Create a new monitor
+// Create a new monitor (assigned to current user)
 router.post('/', validateMonitor, (req, res) => {
   const { url, name, frequency, expectedStatus, timeoutMs, notifyEmail } = req.body;
 
   const result = db.prepare(`
-    INSERT INTO monitors (url, name, frequency_seconds, expected_status, timeout_ms, notify_email)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO monitors (url, name, frequency_seconds, expected_status, timeout_ms, notify_email, user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     url,
     name || new URL(url).hostname,
     frequency || 300,
     expectedStatus || 200,
     timeoutMs || 10000,
-    notifyEmail
+    notifyEmail,
+    req.user.id
   );
 
   const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(formatMonitor(monitor));
 });
 
-// Update a monitor
+// Update a monitor (ownership check)
 router.put('/:id', validateMonitor, (req, res) => {
-  const existing = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
+  const existing = db.prepare('SELECT * FROM monitors WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!existing) {
     return res.status(404).json({ error: 'Monitor not found' });
   }
@@ -90,7 +92,7 @@ router.put('/:id', validateMonitor, (req, res) => {
     UPDATE monitors
     SET url = ?, name = ?, frequency_seconds = ?, expected_status = ?,
         timeout_ms = ?, notify_email = ?, updated_at = datetime('now')
-    WHERE id = ?
+    WHERE id = ? AND user_id = ?
   `).run(
     url,
     name || new URL(url).hostname,
@@ -98,29 +100,30 @@ router.put('/:id', validateMonitor, (req, res) => {
     expectedStatus || 200,
     timeoutMs || 10000,
     notifyEmail,
-    req.params.id
+    req.params.id,
+    req.user.id
   );
 
   const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
   res.json(formatMonitor(monitor));
 });
 
-// Delete a monitor
+// Delete a monitor (ownership check)
 router.delete('/:id', (req, res) => {
-  const existing = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
+  const existing = db.prepare('SELECT * FROM monitors WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!existing) {
     return res.status(404).json({ error: 'Monitor not found' });
   }
 
-  db.prepare('DELETE FROM monitors WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM monitors WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
   res.status(204).end();
 });
 
-// Pause a monitor (indefinite)
+// Pause a monitor (ownership check)
 router.post('/:id/pause', (req, res) => {
   const result = db.prepare(
-    'UPDATE monitors SET is_active = 0, paused_until = NULL, updated_at = datetime(\'now\') WHERE id = ?'
-  ).run(req.params.id);
+    'UPDATE monitors SET is_active = 0, paused_until = NULL, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?'
+  ).run(req.params.id, req.user.id);
 
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Monitor not found' });
@@ -130,11 +133,11 @@ router.post('/:id/pause', (req, res) => {
   res.json(formatMonitor(monitor));
 });
 
-// Resume a monitor
+// Resume a monitor (ownership check)
 router.post('/:id/resume', (req, res) => {
   const result = db.prepare(
-    'UPDATE monitors SET is_active = 1, paused_until = NULL, updated_at = datetime(\'now\') WHERE id = ?'
-  ).run(req.params.id);
+    'UPDATE monitors SET is_active = 1, paused_until = NULL, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?'
+  ).run(req.params.id, req.user.id);
 
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Monitor not found' });
@@ -144,9 +147,9 @@ router.post('/:id/resume', (req, res) => {
   res.json(formatMonitor(monitor));
 });
 
-// Register scheduled downtime with duration
+// Register scheduled downtime with duration (ownership check)
 router.post('/:id/downtime', (req, res) => {
-  const existing = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
+  const existing = db.prepare('SELECT * FROM monitors WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!existing) {
     return res.status(404).json({ error: 'Monitor not found' });
   }
@@ -163,22 +166,22 @@ router.post('/:id/downtime', (req, res) => {
   if (duration === 0) {
     // Indefinite pause
     db.prepare(
-      'UPDATE monitors SET is_active = 0, paused_until = NULL, updated_at = datetime(\'now\') WHERE id = ?'
-    ).run(req.params.id);
+      'UPDATE monitors SET is_active = 0, paused_until = NULL, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?'
+    ).run(req.params.id, req.user.id);
   } else {
     // Timed downtime
     db.prepare(
-      'UPDATE monitors SET is_active = 0, paused_until = datetime(\'now\', \'+\' || ? || \' seconds\'), updated_at = datetime(\'now\') WHERE id = ?'
-    ).run(duration, req.params.id);
+      'UPDATE monitors SET is_active = 0, paused_until = datetime(\'now\', \'+\' || ? || \' seconds\'), updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?'
+    ).run(duration, req.params.id, req.user.id);
   }
 
   const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
   res.json(formatMonitor(monitor));
 });
 
-// Instant check — run a check immediately without waiting for the scheduler
+// Instant check — run a check immediately without waiting for the scheduler (ownership check)
 router.post('/:id/check', async (req, res) => {
-  const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
+  const monitor = db.prepare('SELECT * FROM monitors WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!monitor) {
     return res.status(404).json({ error: 'Monitor not found' });
   }

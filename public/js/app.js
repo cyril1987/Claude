@@ -1,3 +1,52 @@
+let currentUser = null;
+
+async function initAuth() {
+  try {
+    const res = await fetch('/auth/me');
+    if (res.status === 401) {
+      window.location.href = '/login.html';
+      return false;
+    }
+    if (!res.ok) {
+      window.location.href = '/login.html';
+      return false;
+    }
+    currentUser = await res.json();
+
+    // Populate user menu in navbar
+    const navUser = document.getElementById('nav-user');
+    const navAvatar = document.getElementById('nav-avatar');
+    const navUserName = document.getElementById('nav-user-name');
+    if (navUser) {
+      navUser.style.display = 'flex';
+      if (navAvatar && currentUser.avatarUrl) {
+        navAvatar.src = currentUser.avatarUrl;
+        navAvatar.alt = currentUser.name;
+      } else if (navAvatar) {
+        navAvatar.style.display = 'none';
+      }
+      if (navUserName) {
+        navUserName.textContent = currentUser.name || currentUser.email;
+      }
+    }
+
+    // Wire up logout button
+    const logoutBtn = document.getElementById('nav-logout');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await fetch('/auth/logout', { method: 'POST' });
+        window.location.href = '/login.html';
+      });
+    }
+
+    return true;
+  } catch {
+    window.location.href = '/login.html';
+    return false;
+  }
+}
+
 function route() {
   const hash = location.hash.slice(1) || '/';
   const app = document.getElementById('app');
@@ -28,4 +77,7 @@ function route() {
 }
 
 window.addEventListener('hashchange', route);
-window.addEventListener('DOMContentLoaded', route);
+window.addEventListener('DOMContentLoaded', async () => {
+  const authed = await initAuth();
+  if (authed) route();
+});
