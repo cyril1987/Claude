@@ -63,9 +63,7 @@ function route() {
 
   if (hash === '/') {
     Dashboard.render(app);
-  } else if (hash === '/health') {
-    Health.render(app);
-  } else if (hash === '/settings') {
+  } else if (hash === '/settings' || hash === '/health') {
     Settings.render(app);
   } else if (hash === '/upload') {
     BulkUpload.render(app);
