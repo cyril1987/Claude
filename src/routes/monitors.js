@@ -23,7 +23,7 @@ router.get('/', (req, res) => {
          AND c.checked_at > datetime('now', '-1 day')
       ) AS avg_response_ms_24h
     FROM monitors m
-    ORDER BY m.created_at DESC
+    ORDER BY m.group_name NULLS LAST, m.created_at DESC
   `).all();
 
   res.json(monitors.map(formatMonitor));
@@ -59,14 +59,15 @@ router.get('/:id', (req, res) => {
 
 // Create a new monitor
 router.post('/', validateMonitor, (req, res) => {
-  const { url, name, frequency, expectedStatus, timeoutMs, notifyEmail, customHeaders } = req.body;
+  const { url, name, frequency, expectedStatus, timeoutMs, notifyEmail, customHeaders, group } = req.body;
   const headersJson = Array.isArray(customHeaders) && customHeaders.length > 0
     ? JSON.stringify(customHeaders)
     : null;
+  const groupName = group && typeof group === 'string' && group.trim() ? group.trim() : null;
 
   const result = db.prepare(`
-    INSERT INTO monitors (url, name, frequency_seconds, expected_status, timeout_ms, notify_email, custom_headers)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO monitors (url, name, frequency_seconds, expected_status, timeout_ms, notify_email, custom_headers, group_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     url,
     name || new URL(url).hostname,
@@ -74,7 +75,8 @@ router.post('/', validateMonitor, (req, res) => {
     expectedStatus || 200,
     timeoutMs || 10000,
     notifyEmail,
-    headersJson
+    headersJson,
+    groupName
   );
 
   const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(result.lastInsertRowid);
@@ -88,15 +90,17 @@ router.put('/:id', validateMonitor, (req, res) => {
     return res.status(404).json({ error: 'Monitor not found' });
   }
 
-  const { url, name, frequency, expectedStatus, timeoutMs, notifyEmail, customHeaders } = req.body;
+  const { url, name, frequency, expectedStatus, timeoutMs, notifyEmail, customHeaders, group } = req.body;
   const headersJson = Array.isArray(customHeaders) && customHeaders.length > 0
     ? JSON.stringify(customHeaders)
     : null;
+  const groupName = group && typeof group === 'string' && group.trim() ? group.trim() : null;
 
   db.prepare(`
     UPDATE monitors
     SET url = ?, name = ?, frequency_seconds = ?, expected_status = ?,
-        timeout_ms = ?, notify_email = ?, custom_headers = ?, updated_at = datetime('now')
+        timeout_ms = ?, notify_email = ?, custom_headers = ?, group_name = ?,
+        updated_at = datetime('now')
     WHERE id = ?
   `).run(
     url,
@@ -106,6 +110,7 @@ router.put('/:id', validateMonitor, (req, res) => {
     timeoutMs || 10000,
     notifyEmail,
     headersJson,
+    groupName,
     req.params.id
   );
 
@@ -240,6 +245,7 @@ function formatMonitor(row) {
     uptimePercent24h: row.uptime_percent_24h ?? null,
     avgResponseMs24h: row.avg_response_ms_24h ?? null,
     customHeaders,
+    group: row.group_name || null,
   };
 }
 

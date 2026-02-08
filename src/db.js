@@ -52,6 +52,12 @@ try {
   // Column already exists — ignore
 }
 
+try {
+  db.exec(fs.readFileSync(path.join(__dirname, '..', 'migrations', '006-add-monitor-groups.sql'), 'utf8'));
+} catch (e) {
+  // Column already exists — ignore
+}
+
 // Ensure sessions table has the correct schema expected by better-sqlite3-session-store.
 // The library expects columns: (sid, sess, expire). If the table exists with a different
 // schema (e.g. 'expired' instead of 'expire'), drop it so the library can recreate it.

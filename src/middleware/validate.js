@@ -66,6 +66,15 @@ function validateMonitorData(data) {
     errors.push('notifyEmail must be a valid email address');
   }
 
+  // Group name validation
+  if (data.group !== undefined && data.group !== null && data.group !== '') {
+    if (typeof data.group !== 'string') {
+      errors.push('group must be a string');
+    } else if (data.group.length > 100) {
+      errors.push('group must be 100 characters or fewer');
+    }
+  }
+
   // Custom headers validation
   if (customHeaders !== undefined && customHeaders !== null) {
     if (!Array.isArray(customHeaders)) {

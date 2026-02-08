@@ -19,12 +19,20 @@ const MonitorForm = {
     const timeoutMs = monitor ? monitor.timeoutMs : 10000;
     const notifyEmail = monitor ? monitor.notifyEmail : '';
     const existingHeaders = monitor && monitor.customHeaders ? monitor.customHeaders : [];
+    const group = monitor ? (monitor.group || '') : '';
 
     container.innerHTML = `
       <div class="form-container">
         <h2 class="form-title">${title}</h2>
         <div id="form-errors"></div>
         <form id="monitor-form">
+          <div class="form-group">
+            <label for="group">Group</label>
+            <input type="text" id="group" name="group" value="${escapeAttr(group)}" placeholder="e.g. Demo Environment, Production APIs" list="group-suggestions">
+            <datalist id="group-suggestions"></datalist>
+            <div class="hint">Optional group to organize monitors on the dashboard</div>
+          </div>
+
           <div class="form-group">
             <label for="url">URL</label>
             <input type="url" id="url" name="url" value="${escapeAttr(url)}" placeholder="https://example.com" required>
@@ -108,6 +116,15 @@ const MonitorForm = {
 
     addBtn.addEventListener('click', () => addHeaderRow('', '', false));
 
+    // Populate group suggestions from existing monitors
+    API.get('/monitors').then(monitors => {
+      const groups = [...new Set(monitors.map(m => m.group).filter(Boolean))];
+      const datalist = document.getElementById('group-suggestions');
+      if (datalist) {
+        datalist.innerHTML = groups.map(g => `<option value="${escapeAttr(g)}">`).join('');
+      }
+    }).catch(() => {});
+
     document.getElementById('monitor-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const errorsEl = document.getElementById('form-errors');
@@ -124,6 +141,7 @@ const MonitorForm = {
         }
       }
 
+      const groupVal = document.getElementById('group').value.trim();
       const formData = {
         url: document.getElementById('url').value.trim(),
         name: document.getElementById('name').value.trim(),
@@ -133,6 +151,7 @@ const MonitorForm = {
         notifyEmail: document.getElementById('notifyEmail').value.trim(),
       };
 
+      if (groupVal) formData.group = groupVal;
       if (customHeaders.length > 0) {
         formData.customHeaders = customHeaders;
       }

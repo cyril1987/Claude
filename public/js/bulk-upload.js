@@ -101,7 +101,7 @@ const BulkUpload = {
 
   downloadTemplate() {
     const headers = [
-      'url', 'name', 'notify_email', 'frequency_seconds',
+      'group', 'url', 'name', 'notify_email', 'frequency_seconds',
       'expected_status', 'timeout_ms',
       'header_1_key', 'header_1_value',
       'header_2_key', 'header_2_value',
@@ -109,7 +109,7 @@ const BulkUpload = {
     ];
     const sampleRows = [
       {
-        url: 'https://example.com', name: 'Example Site',
+        group: 'Production', url: 'https://example.com', name: 'Example Site',
         notify_email: 'admin@example.com', frequency_seconds: 300,
         expected_status: 200, timeout_ms: 10000,
         header_1_key: '', header_1_value: '',
@@ -117,7 +117,7 @@ const BulkUpload = {
         header_3_key: '', header_3_value: ''
       },
       {
-        url: 'https://api.example.com/health', name: 'Example API',
+        group: 'Demo Environment', url: 'https://api.example.com/health', name: 'Example API',
         notify_email: 'devops@example.com', frequency_seconds: 60,
         expected_status: 200, timeout_ms: 5000,
         header_1_key: 'Authorization', header_1_value: 'Bearer YOUR_TOKEN',
@@ -128,7 +128,7 @@ const BulkUpload = {
     const ws = XLSX.utils.json_to_sheet(sampleRows, { header: headers });
     // Set column widths for readability
     ws['!cols'] = [
-      { wch: 35 }, { wch: 18 }, { wch: 25 }, { wch: 18 },
+      { wch: 20 }, { wch: 35 }, { wch: 18 }, { wch: 25 }, { wch: 18 },
       { wch: 15 }, { wch: 12 },
       { wch: 18 }, { wch: 25 },
       { wch: 18 }, { wch: 25 },
@@ -143,6 +143,7 @@ const BulkUpload = {
 
   normalizeAndValidate(jsonRows) {
     const columnMap = {
+      'group': 'group', 'group_name': 'group', 'monitor_group': 'group', 'category': 'group', 'environment': 'group',
       'url': 'url', 'website': 'url', 'endpoint': 'url',
       'name': 'name', 'monitor_name': 'name',
       'notify_email': 'notifyEmail', 'notifyemail': 'notifyEmail',
@@ -208,6 +209,7 @@ const BulkUpload = {
       if (normalized.url !== undefined) normalized.url = String(normalized.url);
       if (normalized.notifyEmail !== undefined) normalized.notifyEmail = String(normalized.notifyEmail);
       if (normalized.name !== undefined) normalized.name = String(normalized.name);
+      if (normalized.group !== undefined) normalized.group = String(normalized.group);
 
       return { rowNum: i + 1, data: normalized, errors: [], isValid: true };
     });
@@ -315,6 +317,7 @@ const BulkUpload = {
               <tr>
                 <th style="width:36px">#</th>
                 <th style="width:36px"></th>
+                <th style="min-width:110px">Group</th>
                 <th style="min-width:200px">URL</th>
                 <th style="min-width:120px">Name</th>
                 <th style="width:130px">Frequency</th>
@@ -366,6 +369,7 @@ const BulkUpload = {
       html += `<tr class="${r.isValid ? 'staging-row-valid' : 'staging-row-invalid'}">
         <td style="text-align:center;color:var(--color-text-tertiary)">${r.rowNum}</td>
         <td style="text-align:center"><span class="status-dot ${r.isValid ? 'up' : 'down'}" style="display:inline-block"></span></td>
+        <td><input type="text" class="staging-cell-input" data-row="${i}" data-field="group" value="${escapeAttr(d.group || '')}"></td>
         <td><input type="text" class="staging-cell-input ${r.errors.some(e => e.includes('url')) ? 'has-error' : ''}" data-row="${i}" data-field="url" value="${escapeAttr(d.url || '')}"></td>
         <td><input type="text" class="staging-cell-input" data-row="${i}" data-field="name" value="${escapeAttr(d.name || '')}"></td>
         <td>
@@ -381,12 +385,12 @@ const BulkUpload = {
       </tr>`;
 
       if (!r.isValid) {
-        html += `<tr class="staging-row-invalid"><td colspan="10" class="staging-row-errors">${r.errors.map(e => escapeHtml(e)).join(' &bull; ')}</td></tr>`;
+        html += `<tr class="staging-row-invalid"><td colspan="11" class="staging-row-errors">${r.errors.map(e => escapeHtml(e)).join(' &bull; ')}</td></tr>`;
       }
     }
 
     if (this.parsedRows.length === 0) {
-      html = '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--color-text-tertiary)">No rows to display</td></tr>';
+      html = '<tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--color-text-tertiary)">No rows to display</td></tr>';
     }
 
     tbody.innerHTML = html;
@@ -462,6 +466,7 @@ const BulkUpload = {
         if (!d.expectedStatus) delete d.expectedStatus;
         if (!d.timeoutMs) delete d.timeoutMs;
         if (!d.name) delete d.name;
+        if (!d.group) delete d.group;
         return d;
       })
     };

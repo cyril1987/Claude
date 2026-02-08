@@ -30,8 +30,8 @@ router.post('/monitors/bulk', express.json({ limit: '1mb' }), (req, res) => {
 
   if (validMonitors.length > 0) {
     const insertStmt = db.prepare(`
-      INSERT INTO monitors (url, name, frequency_seconds, expected_status, timeout_ms, notify_email, custom_headers)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO monitors (url, name, frequency_seconds, expected_status, timeout_ms, notify_email, custom_headers, group_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertAll = db.transaction((items) => {
@@ -40,6 +40,7 @@ router.post('/monitors/bulk', express.json({ limit: '1mb' }), (req, res) => {
         const headersJson = Array.isArray(d.customHeaders) && d.customHeaders.length > 0
           ? JSON.stringify(d.customHeaders)
           : null;
+        const groupName = d.group && typeof d.group === 'string' && d.group.trim() ? d.group.trim() : null;
         try {
           const result = insertStmt.run(
             d.url,
@@ -48,7 +49,8 @@ router.post('/monitors/bulk', express.json({ limit: '1mb' }), (req, res) => {
             d.expectedStatus || 200,
             d.timeoutMs || 10000,
             d.notifyEmail,
-            headersJson
+            headersJson,
+            groupName
           );
           const monitor = db.prepare('SELECT * FROM monitors WHERE id = ?').get(result.lastInsertRowid);
           results.created.push({ rowIndex: item.index, monitorId: monitor.id, name: monitor.name });
