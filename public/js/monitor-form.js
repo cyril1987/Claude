@@ -18,6 +18,7 @@ const MonitorForm = {
     const expectedStatus = monitor ? monitor.expectedStatus : 200;
     const timeoutMs = monitor ? monitor.timeoutMs : 10000;
     const notifyEmail = monitor ? monitor.notifyEmail : '';
+    const existingHeaders = monitor && monitor.customHeaders ? monitor.customHeaders : [];
 
     container.innerHTML = `
       <div class="form-container">
@@ -65,6 +66,13 @@ const MonitorForm = {
             <div class="hint">Email address to receive alerts when this URL goes down or recovers</div>
           </div>
 
+          <div class="form-group">
+            <label>Custom HTTP Headers</label>
+            <div class="hint" style="margin-bottom:0.5rem">Add custom headers for API authentication (e.g., Authorization, x-api-key). Values are stored securely and masked in the UI.</div>
+            <div id="custom-headers-list"></div>
+            <button type="button" id="add-header-btn" class="btn btn-secondary btn-sm" style="margin-top:0.5rem">+ Add Header</button>
+          </div>
+
           <div class="form-actions">
             <button type="submit" class="btn btn-primary">${monitor ? 'Update Monitor' : 'Create Monitor'}</button>
             <a href="#/" class="btn btn-secondary">Cancel</a>
@@ -73,10 +81,48 @@ const MonitorForm = {
       </div>
     `;
 
+    // Initialize custom headers UI
+    const headersList = document.getElementById('custom-headers-list');
+    const addBtn = document.getElementById('add-header-btn');
+    let headerIndex = 0;
+
+    function addHeaderRow(key, value, isMasked) {
+      if (headersList.querySelectorAll('.header-row').length >= 10) return;
+      const row = document.createElement('div');
+      row.className = 'header-row';
+      row.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem';
+      const idx = headerIndex++;
+      row.innerHTML = `
+        <input type="text" class="header-key" data-idx="${idx}" value="${escapeAttr(key || '')}" placeholder="Header name (e.g. Authorization)" style="flex:1">
+        <input type="text" class="header-value" data-idx="${idx}" value="${isMasked ? '' : escapeAttr(value || '')}" placeholder="${isMasked ? 'Re-enter value to update' : 'Header value'}" style="flex:1.5">
+        <button type="button" class="btn btn-danger btn-sm header-remove" style="padding:0.25rem 0.5rem;font-size:0.75rem">Remove</button>
+      `;
+      row.querySelector('.header-remove').addEventListener('click', () => row.remove());
+      headersList.appendChild(row);
+    }
+
+    // Populate existing headers (keys shown, values masked — user must re-enter)
+    for (const h of existingHeaders) {
+      addHeaderRow(h.key, '', true);
+    }
+
+    addBtn.addEventListener('click', () => addHeaderRow('', '', false));
+
     document.getElementById('monitor-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const errorsEl = document.getElementById('form-errors');
       errorsEl.innerHTML = '';
+
+      // Collect custom headers
+      const headerRows = headersList.querySelectorAll('.header-row');
+      const customHeaders = [];
+      for (const row of headerRows) {
+        const key = row.querySelector('.header-key').value.trim();
+        const value = row.querySelector('.header-value').value;
+        if (key && value) {
+          customHeaders.push({ key, value });
+        }
+      }
 
       const formData = {
         url: document.getElementById('url').value.trim(),
@@ -86,6 +132,10 @@ const MonitorForm = {
         timeoutMs: parseInt(document.getElementById('timeoutMs').value, 10),
         notifyEmail: document.getElementById('notifyEmail').value.trim(),
       };
+
+      if (customHeaders.length > 0) {
+        formData.customHeaders = customHeaders;
+      }
 
       try {
         if (monitor) {

@@ -1,8 +1,9 @@
 const ALLOWED_FREQUENCIES = [60, 300, 900, 1800, 3600];
+const FORBIDDEN_HEADERS = ['host', 'content-length', 'transfer-encoding', 'cookie', 'connection'];
 
 function validateMonitor(req, res, next) {
   const errors = [];
-  const { url, name, frequency, expectedStatus, timeoutMs, notifyEmail } = req.body;
+  const { url, name, frequency, expectedStatus, timeoutMs, notifyEmail, customHeaders } = req.body;
 
   // URL validation
   if (!url || typeof url !== 'string') {
@@ -62,6 +63,33 @@ function validateMonitor(req, res, next) {
     errors.push('notifyEmail is required');
   } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notifyEmail)) {
     errors.push('notifyEmail must be a valid email address');
+  }
+
+  // Custom headers validation
+  if (customHeaders !== undefined && customHeaders !== null) {
+    if (!Array.isArray(customHeaders)) {
+      errors.push('customHeaders must be an array');
+    } else if (customHeaders.length > 10) {
+      errors.push('customHeaders cannot have more than 10 entries');
+    } else {
+      for (let i = 0; i < customHeaders.length; i++) {
+        const h = customHeaders[i];
+        if (!h || typeof h !== 'object') {
+          errors.push(`customHeaders[${i}] must be an object with key and value`);
+          continue;
+        }
+        if (!h.key || typeof h.key !== 'string' || !/^[\w-]+$/.test(h.key)) {
+          errors.push(`customHeaders[${i}].key must contain only letters, numbers, hyphens, and underscores`);
+        } else if (FORBIDDEN_HEADERS.includes(h.key.toLowerCase())) {
+          errors.push(`customHeaders[${i}].key "${h.key}" is not allowed`);
+        }
+        if (typeof h.value !== 'string') {
+          errors.push(`customHeaders[${i}].value must be a string`);
+        } else if (h.value.length > 2000) {
+          errors.push(`customHeaders[${i}].value exceeds maximum length of 2000 characters`);
+        }
+      }
+    }
   }
 
   if (errors.length > 0) {
