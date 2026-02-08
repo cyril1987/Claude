@@ -1128,6 +1128,55 @@ select.staging-cell-input {
   min-width: 100px;
 }
 
+/* Settings Page — Sidebar Layout */
+.settings-layout {
+  display: flex;
+  gap: 1.5rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.settings-sidebar {
+  flex-shrink: 0;
+  width: 200px;
+  position: sticky;
+  top: 84px;
+  align-self: flex-start;
+}
+
+.settings-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.settings-sidebar-nav a {
+  display: block;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: all var(--transition);
+}
+
+.settings-sidebar-nav a:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text);
+}
+
+.settings-sidebar-nav a.active {
+  background: rgba(42, 157, 143, 0.12);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .container { padding: 1.25rem; }
@@ -1140,6 +1189,10 @@ select.staging-cell-input {
   .nav-user-name { display: none; }
   .group-header { flex-wrap: wrap; gap: 0.5rem; }
   .group-header-stats { flex-wrap: wrap; }
+  .settings-layout { flex-direction: column; }
+  .settings-sidebar { width: 100%; position: static; }
+  .settings-sidebar-nav { flex-direction: row; overflow-x: auto; gap: 0.15rem; }
+  .settings-sidebar-nav a { white-space: nowrap; }
 }
 
 @media (max-width: 480px) {
