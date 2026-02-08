@@ -8,10 +8,12 @@ const db = require('./src/db');
 const passport = require('./src/auth');
 const scheduler = require('./src/services/scheduler');
 const authRouter = require('./src/routes/auth');
+const healthRouter = require('./src/routes/health');
 const requireAuth = require('./src/middleware/requireAuth');
 const monitorsRouter = require('./src/routes/monitors');
 const checksRouter = require('./src/routes/checks');
 const settingsRouter = require('./src/routes/settings');
+const bulkRouter = require('./src/routes/bulk');
 
 const app = express();
 
@@ -42,12 +44,16 @@ app.use(passport.session());
 // Auth routes (public — before requireAuth)
 app.use(authRouter);
 
+// Public health check (no auth required — for load balancers)
+app.use(healthRouter);
+
 // Protect all API routes
 app.use('/api', requireAuth);
 
 app.use('/api/monitors', monitorsRouter);
 app.use('/api', checksRouter);
 app.use('/api', settingsRouter);
+app.use('/api', bulkRouter);
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
