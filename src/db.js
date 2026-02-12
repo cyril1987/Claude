@@ -26,4 +26,10 @@ try {
   // Column already exists — ignore
 }
 
+try {
+  db.exec(fs.readFileSync(path.join(__dirname, '..', 'migrations', '003-add-users.sql'), 'utf8'));
+} catch (e) {
+  // Table already exists — ignore
+}
+
 module.exports = db;

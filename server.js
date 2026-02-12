@@ -3,6 +3,8 @@ const express = require('express');
 const path = require('path');
 const config = require('./src/config');
 const scheduler = require('./src/services/scheduler');
+const { configurePassport, requireAuth } = require('./src/middleware/auth');
+const authRouter = require('./src/routes/auth');
 const monitorsRouter = require('./src/routes/monitors');
 const checksRouter = require('./src/routes/checks');
 const settingsRouter = require('./src/routes/settings');
@@ -10,11 +12,20 @@ const settingsRouter = require('./src/routes/settings');
 const app = express();
 
 app.use(express.json());
+
+// Configure passport + sessions (before routes, after express.json)
+configurePassport(app);
+
+// Static files served without auth so login page loads
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/api/monitors', monitorsRouter);
-app.use('/api', checksRouter);
-app.use('/api', settingsRouter);
+// Auth routes — no requireAuth
+app.use('/auth', authRouter);
+
+// Protected API routes
+app.use('/api/monitors', requireAuth, monitorsRouter);
+app.use('/api', requireAuth, checksRouter);
+app.use('/api', requireAuth, settingsRouter);
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
