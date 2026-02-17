@@ -56,9 +56,25 @@ function route() {
     clearInterval(Dashboard.refreshTimer);
     Dashboard.refreshTimer = null;
   }
+  if (Tasks.refreshTimer) {
+    clearInterval(Tasks.refreshTimer);
+    Tasks.refreshTimer = null;
+  }
 
   if (hash === '/') {
     Dashboard.render(app);
+  } else if (hash === '/tasks/all') {
+    Tasks.render(app, 'all');
+  } else if (hash === '/tasks/new') {
+    Tasks.renderForm(app);
+  } else if (hash === '/tasks') {
+    Tasks.render(app);
+  } else if (hash.match(/^\/tasks\/\d+\/edit$/)) {
+    const id = hash.split('/')[2];
+    Tasks.renderForm(app, id);
+  } else if (hash.match(/^\/tasks\/\d+$/)) {
+    const id = hash.split('/')[2];
+    TaskDetail.render(app, id);
   } else if (hash === '/settings' || hash === '/health') {
     Settings.render(app);
   } else if (hash === '/upload') {
