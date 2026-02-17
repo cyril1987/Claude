@@ -56,11 +56,30 @@ function route() {
     clearInterval(Dashboard.refreshTimer);
     Dashboard.refreshTimer = null;
   }
+  if (Tasks.refreshTimer) {
+    clearInterval(Tasks.refreshTimer);
+    Tasks.refreshTimer = null;
+  }
 
   if (hash === '/') {
     Dashboard.render(app);
+  } else if (hash === '/tasks/all') {
+    Tasks.render(app, 'all');
+  } else if (hash === '/tasks/new' || hash.startsWith('/tasks/new?')) {
+    const params = new URLSearchParams(hash.split('?')[1] || '');
+    Tasks.renderForm(app, null, params.get('parent'));
+  } else if (hash === '/tasks') {
+    Tasks.render(app);
+  } else if (hash.match(/^\/tasks\/\d+\/edit$/)) {
+    const id = hash.split('/')[2];
+    Tasks.renderForm(app, id);
+  } else if (hash.match(/^\/tasks\/\d+$/)) {
+    const id = hash.split('/')[2];
+    TaskDetail.render(app, id);
   } else if (hash === '/settings' || hash === '/health') {
     Settings.render(app);
+  } else if (hash === '/tasks/ismart-upload') {
+    IsmartUpload.render(app);
   } else if (hash === '/upload') {
     BulkUpload.render(app);
   } else if (hash === '/add') {

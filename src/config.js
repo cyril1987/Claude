@@ -29,4 +29,9 @@ module.exports = {
   checkRetentionDays: parseInt(process.env.CHECK_RETENTION_DAYS || '30', 10),
   schedulerIntervalMs: parseInt(process.env.SCHEDULER_INTERVAL_MS || '15000', 10),
   failuresBeforeAlert: parseInt(process.env.FAILURES_BEFORE_ALERT || '2', 10),
+  jira: {
+    baseUrl: (process.env.JIRA_BASE_URL || '').replace(/\/+$/, ''),
+    userEmail: process.env.JIRA_USER_EMAIL || '',
+    apiToken: process.env.JIRA_API_TOKEN || '',
+  },
 };

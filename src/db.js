@@ -58,6 +58,30 @@ try {
   // Column already exists — ignore
 }
 
+try {
+  db.exec(fs.readFileSync(path.join(__dirname, '..', 'migrations', '007-add-tasks.sql'), 'utf8'));
+} catch (e) {
+  // Tables already exist — ignore
+}
+
+try {
+  db.exec(fs.readFileSync(path.join(__dirname, '..', 'migrations', '008-add-jira-integration.sql'), 'utf8'));
+} catch (e) {
+  // Columns already exist — ignore
+}
+
+try {
+  db.exec(fs.readFileSync(path.join(__dirname, '..', 'migrations', '009-add-private-tasks.sql'), 'utf8'));
+} catch (e) {
+  // Column already exists — ignore
+}
+
+try {
+  db.exec(fs.readFileSync(path.join(__dirname, '..', 'migrations', '010-add-ismart-tickets.sql'), 'utf8'));
+} catch (e) {
+  // Table/indexes already exist — ignore
+}
+
 // Ensure sessions table has the correct schema expected by better-sqlite3-session-store.
 // The library expects columns: (sid, sess, expire). If the table exists with a different
 // schema (e.g. 'expired' instead of 'expire'), drop it so the library can recreate it.

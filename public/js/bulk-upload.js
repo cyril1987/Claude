@@ -29,7 +29,8 @@ const BulkUpload = {
   renderUploadStep(container) {
     this.currentStep = 1;
     container.innerHTML = `
-      <div class="form-container" style="max-width:720px">
+      <div class="form-container" style="max-width:720px;position:relative">
+        <button type="button" class="form-close-btn" id="form-close-btn" title="Close">&times;</button>
         ${this.renderSteps(1)}
         <h2 class="form-title">Bulk Upload Monitors</h2>
         <p style="color:var(--color-text-secondary);font-size:0.88rem;margin-bottom:1.5rem">
@@ -54,6 +55,15 @@ const BulkUpload = {
         </div>
       </div>
     `;
+
+    // Close button
+    document.getElementById('form-close-btn').addEventListener('click', () => {
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        location.hash = '#/';
+      }
+    });
 
     const dropzone = document.getElementById('upload-dropzone');
     const fileInput = document.getElementById('file-input');
@@ -484,7 +494,7 @@ const BulkUpload = {
           if (newGroup && newGroup.trim()) {
             const trimmed = newGroup.trim();
             if (trimmed.length > 100) {
-              alert('Group name must be 100 characters or fewer');
+              Modal.alert('Group name must be 100 characters or fewer', 'Validation Error');
               e.target.value = this.parsedRows[rowIdx].data.group || '';
               return;
             }

@@ -1,6 +1,8 @@
 const db = require('../db');
 const { checkMonitor } = require('./checker');
 const { evaluateAndNotify } = require('./notifier');
+const taskScheduler = require('./taskScheduler');
+const { checkDueSoonTasks, checkOverdueTasks } = require('./taskNotifier');
 const config = require('../config');
 
 let running = false;
@@ -82,6 +84,33 @@ async function tick() {
     }
 
     maybeCleanup();
+
+    // Process recurring task instances
+    try {
+      taskScheduler.tick();
+    } catch (err) {
+      console.error('[SCHEDULER] Task scheduler error:', err);
+    }
+
+    // Check for task deadline notifications
+    try {
+      await checkDueSoonTasks();
+      await checkOverdueTasks();
+    } catch (err) {
+      console.error('[SCHEDULER] Task notification error:', err);
+    }
+
+    // Sync Jira statuses (every 5 minutes, not every tick)
+    if (!tick._lastJiraSync || Date.now() - tick._lastJiraSync > 300000) {
+      try {
+        const { syncAllJiraTasks } = require('./jiraService');
+        await syncAllJiraTasks();
+        tick._lastJiraSync = Date.now();
+      } catch (err) {
+        console.error('[SCHEDULER] Jira sync error:', err);
+      }
+    }
+
     lastTickAt = new Date().toISOString();
     lastTickDurationMs = Date.now() - tickStart;
     lastTickError = null;

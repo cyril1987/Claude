@@ -198,10 +198,10 @@ const MonitorDetail = {
       const msg = check.isSuccess
         ? `OK — ${check.statusCode} in ${check.responseTimeMs}ms`
         : `FAILED — ${check.errorMessage || 'Status ' + check.statusCode}`;
-      alert(msg);
+      Modal.alert(msg, check.isSuccess ? 'Check Passed' : 'Check Failed');
       MonitorDetail.render(document.getElementById('app'), id);
     } catch (err) {
-      alert('Check failed: ' + err.message);
+      Modal.alert('Check failed: ' + err.message, 'Error');
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Check Now';
@@ -214,7 +214,7 @@ const MonitorDetail = {
       await API.post(`/monitors/${id}/pause`);
       MonitorDetail.render(document.getElementById('app'), id);
     } catch (err) {
-      alert('Failed to pause: ' + err.message);
+      Modal.alert('Failed to pause: ' + err.message, 'Error');
     }
   },
 
@@ -223,17 +223,17 @@ const MonitorDetail = {
       await API.post(`/monitors/${id}/resume`);
       MonitorDetail.render(document.getElementById('app'), id);
     } catch (err) {
-      alert('Failed to resume: ' + err.message);
+      Modal.alert('Failed to resume: ' + err.message, 'Error');
     }
   },
 
   async remove(id) {
-    if (!confirm('Are you sure you want to delete this monitor? This cannot be undone.')) return;
+    if (!(await Modal.confirm('Are you sure you want to delete this monitor? This cannot be undone.', 'Delete Monitor'))) return;
     try {
       await API.delete(`/monitors/${id}`);
       location.hash = '#/';
     } catch (err) {
-      alert('Failed to delete: ' + err.message);
+      Modal.alert('Failed to delete: ' + err.message, 'Error');
     }
   },
 
@@ -256,7 +256,7 @@ const MonitorDetail = {
       await API.post(`/monitors/${id}/downtime`, { duration });
       MonitorDetail.render(document.getElementById('app'), id);
     } catch (err) {
-      alert('Failed to schedule downtime: ' + err.message);
+      Modal.alert('Failed to schedule downtime: ' + err.message, 'Error');
     }
   },
 

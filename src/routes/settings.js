@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const config = require('../config');
 const { sendTestEmail } = require('../services/notifier');
+const jiraService = require('../services/jiraService');
 
 // Get SMTP configuration status (no secrets exposed)
 router.get('/settings/smtp', (req, res) => {
@@ -36,6 +37,40 @@ router.post('/settings/test-email', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to send test email',
+      details: err.message,
+    });
+  }
+});
+
+// ─── Jira Integration Settings ──────────────────────────────────────────────
+
+// Get Jira configuration status (no secrets exposed)
+router.get('/settings/jira', (req, res) => {
+  res.json({
+    baseUrl: config.jira.baseUrl || '(not set)',
+    userEmail: config.jira.userEmail ? config.jira.userEmail.slice(0, 4) + '****' : '(not set)',
+    configured: jiraService.isConfigured(),
+  });
+});
+
+// Test Jira connection
+router.post('/settings/test-jira', async (req, res) => {
+  if (!jiraService.isConfigured()) {
+    return res.status(400).json({
+      success: false,
+      error: 'Jira integration is not configured. Set JIRA_BASE_URL, JIRA_USER_EMAIL, and JIRA_API_TOKEN in your .env file.',
+    });
+  }
+
+  try {
+    const result = await jiraService.testConnection();
+    console.log(`[JIRA] Connection test successful — user: ${result.displayName}`);
+    res.json(result);
+  } catch (err) {
+    console.error(`[JIRA] Connection test failed:`, err.message);
+    res.status(502).json({
+      success: false,
+      error: 'Failed to connect to Jira',
       details: err.message,
     });
   }
