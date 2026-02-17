@@ -1,6 +1,6 @@
 const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const VALID_STATUSES = ['todo', 'in_progress', 'done', 'cancelled'];
-const VALID_SOURCES = ['manual', 'ismart', 'recurring'];
+const VALID_SOURCES = ['manual', 'ismart', 'recurring', 'jira'];
 const VALID_RECURRENCE_TYPES = ['daily', 'weekly', 'monthly', 'yearly'];
 
 function validateTaskData(data) {
@@ -103,11 +103,64 @@ function validateTaskData(data) {
           errors.push('Day of month must be between 1 and 31');
         }
       }
-      if (p.dayOfWeek !== undefined) {
-        const day = parseInt(p.dayOfWeek, 10);
-        if (isNaN(day) || day < 0 || day > 6) {
-          errors.push('Day of week must be between 0 (Sunday) and 6 (Saturday)');
+      if (p.dayOfWeek !== undefined && p.dayOfWeek !== null) {
+        if (typeof p.dayOfWeek === 'number' || typeof p.dayOfWeek === 'string') {
+          const day = parseInt(p.dayOfWeek, 10);
+          if (isNaN(day) || day < 0 || day > 6) {
+            errors.push('Day of week must be between 0 (Sunday) and 6 (Saturday)');
+          }
+        } else if (Array.isArray(p.dayOfWeek)) {
+          // Allow array of days for weekly recurrence on specific days
+          for (const d of p.dayOfWeek) {
+            const day = parseInt(d, 10);
+            if (isNaN(day) || day < 0 || day > 6) {
+              errors.push('Each day of week must be between 0 (Sunday) and 6 (Saturday)');
+              break;
+            }
+          }
+          if (p.dayOfWeek.length === 0) {
+            errors.push('At least one day of week must be selected');
+          }
         }
+      }
+
+      // daysOfWeek: array of days (for daily recurrence on specific days)
+      if (p.daysOfWeek !== undefined && p.daysOfWeek !== null) {
+        if (!Array.isArray(p.daysOfWeek)) {
+          errors.push('Days of week must be an array');
+        } else {
+          for (const d of p.daysOfWeek) {
+            const day = parseInt(d, 10);
+            if (isNaN(day) || day < 0 || day > 6) {
+              errors.push('Each day of week must be between 0 (Sunday) and 6 (Saturday)');
+              break;
+            }
+          }
+          if (p.daysOfWeek.length === 0) {
+            errors.push('At least one day of week must be selected');
+          }
+        }
+      }
+
+      // nthWeekday: for monthly "Nth weekday" option (e.g., 2nd Tuesday)
+      if (p.nthWeekday !== undefined && p.nthWeekday !== null) {
+        if (typeof p.nthWeekday !== 'object') {
+          errors.push('nthWeekday must be an object');
+        } else {
+          const n = parseInt(p.nthWeekday.n, 10);
+          const day = parseInt(p.nthWeekday.day, 10);
+          if (isNaN(n) || n < -1 || n > 5 || n === 0) {
+            errors.push('nthWeekday.n must be 1-5 or -1 (last)');
+          }
+          if (isNaN(day) || day < 0 || day > 6) {
+            errors.push('nthWeekday.day must be between 0 (Sunday) and 6 (Saturday)');
+          }
+        }
+      }
+
+      // monthOption: 'dayOfMonth', 'nthWeekday', 'lastDay'
+      if (p.monthOption !== undefined && !['dayOfMonth', 'nthWeekday', 'lastDay'].includes(p.monthOption)) {
+        errors.push('Month option must be one of: dayOfMonth, nthWeekday, lastDay');
       }
       if (p.month !== undefined) {
         const month = parseInt(p.month, 10);
@@ -122,6 +175,15 @@ function validateTaskData(data) {
   if (data.recurrenceEndAt !== undefined && data.recurrenceEndAt !== null && data.recurrenceEndAt !== '') {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(data.recurrenceEndAt)) {
       errors.push('Recurrence end date must be in YYYY-MM-DD format');
+    }
+  }
+
+  // jiraKey: optional, must be a valid Jira issue key format
+  if (data.jiraKey !== undefined && data.jiraKey !== null && data.jiraKey !== '') {
+    if (typeof data.jiraKey !== 'string') {
+      errors.push('Jira key must be a string');
+    } else if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(data.jiraKey.toUpperCase())) {
+      errors.push('Jira key must be in the format PROJECT-123');
     }
   }
 

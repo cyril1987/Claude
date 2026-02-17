@@ -107,4 +107,200 @@ router.post('/monitors/bulk', express.json({ limit: '1mb' }), (req, res) => {
   });
 });
 
+// ─── iSmart Ticket Bulk Upload ──────────────────────────────────────────────
+
+router.post('/tasks/ismart-upload', express.json({ limit: '5mb' }), (req, res) => {
+  const { tickets } = req.body;
+
+  if (!Array.isArray(tickets)) {
+    return res.status(400).json({ error: 'Request body must contain a "tickets" array' });
+  }
+  if (tickets.length === 0) {
+    return res.status(400).json({ error: 'tickets array must not be empty' });
+  }
+  if (tickets.length > 500) {
+    return res.status(400).json({ error: 'Maximum 500 tickets per upload' });
+  }
+
+  const results = { created: [], updated: [], failed: [] };
+
+  // Find iSmart Ticket category
+  const ismartCategory = db.prepare("SELECT id FROM task_categories WHERE name = 'iSmart Ticket'").get();
+  const categoryId = ismartCategory ? ismartCategory.id : null;
+
+  const upsertTicket = db.prepare(`
+    INSERT INTO ismart_tickets (
+      reference_id, incident_id, priority, short_description, description,
+      state, internal_state, category, subcategory, subcategory2,
+      opened_at, updated_at, due_date, opened_by, assigned_to,
+      group_name, business_service, impact, urgency, hold_reason,
+      has_breached, location, channel, program_name, task_id, imported_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(reference_id) DO UPDATE SET
+      incident_id = excluded.incident_id,
+      priority = excluded.priority,
+      short_description = excluded.short_description,
+      description = excluded.description,
+      state = excluded.state,
+      internal_state = excluded.internal_state,
+      category = excluded.category,
+      subcategory = excluded.subcategory,
+      subcategory2 = excluded.subcategory2,
+      opened_at = excluded.opened_at,
+      updated_at = excluded.updated_at,
+      due_date = excluded.due_date,
+      opened_by = excluded.opened_by,
+      assigned_to = excluded.assigned_to,
+      group_name = excluded.group_name,
+      business_service = excluded.business_service,
+      impact = excluded.impact,
+      urgency = excluded.urgency,
+      hold_reason = excluded.hold_reason,
+      has_breached = excluded.has_breached,
+      location = excluded.location,
+      channel = excluded.channel,
+      program_name = excluded.program_name,
+      imported_by = excluded.imported_by
+  `);
+
+  const insertTask = db.prepare(`
+    INSERT INTO tasks (title, description, source, source_ref, priority, status, due_date, category_id, created_by)
+    VALUES (?, ?, 'ismart', ?, ?, 'todo', ?, ?, ?)
+  `);
+
+  const updateTaskSourceRef = db.prepare(`
+    UPDATE tasks SET title = ?, description = ?, priority = ?, due_date = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `);
+
+  const findExistingTicket = db.prepare('SELECT id, task_id FROM ismart_tickets WHERE reference_id = ?');
+  const linkTicketToTask = db.prepare('UPDATE ismart_tickets SET task_id = ? WHERE id = ?');
+
+  const mapPriority = (p) => {
+    if (!p) return 'medium';
+    const pl = p.toLowerCase();
+    if (pl.includes('1') || pl.includes('critical')) return 'urgent';
+    if (pl.includes('2') || pl.includes('high')) return 'high';
+    if (pl.includes('3') || pl.includes('moderate') || pl.includes('medium')) return 'medium';
+    return 'low';
+  };
+
+  const importAll = db.transaction((items) => {
+    for (let i = 0; i < items.length; i++) {
+      const t = items[i];
+
+      // Validate: must have reference_id and short_description
+      if (!t.referenceId || !t.referenceId.trim()) {
+        results.failed.push({ rowIndex: i, referenceId: t.referenceId || '', errors: ['Missing Reference Id'] });
+        continue;
+      }
+      if (!t.shortDescription || !t.shortDescription.trim()) {
+        results.failed.push({ rowIndex: i, referenceId: t.referenceId, errors: ['Missing Short Description'] });
+        continue;
+      }
+
+      const refId = t.referenceId.trim();
+      const title = t.shortDescription.trim().substring(0, 255);
+      const desc = (t.description || '').trim().substring(0, 5000);
+      const priority = mapPriority(t.priority);
+      const dueDate = t.dueDate || null;
+
+      try {
+        const existing = findExistingTicket.get(refId);
+
+        // Upsert iSmart ticket
+        upsertTicket.run(
+          refId, t.incidentId || null, t.priority || null, t.shortDescription || null,
+          t.description || null, t.state || null, t.internalState || null,
+          t.category || null, t.subcategory || null, t.subcategory2 || null,
+          t.openedAt || null, t.updatedAt || null, dueDate,
+          t.openedBy || null, t.assignedTo || null,
+          t.groupName || null, t.businessService || null,
+          t.impact || null, t.urgency || null, t.holdReason || null,
+          t.hasBreached || null, t.location || null, t.channel || null,
+          t.programName || null, existing ? existing.task_id : null, req.user.id
+        );
+
+        if (existing && existing.task_id) {
+          // Update existing task (title, description, priority, due date)
+          updateTaskSourceRef.run(title, desc, priority, dueDate, existing.task_id);
+          results.updated.push({ rowIndex: i, referenceId: refId, taskId: existing.task_id, title });
+        } else {
+          // Create new task (unassigned)
+          const taskResult = insertTask.run(title, desc, refId, priority, dueDate, categoryId, req.user.id);
+          const taskId = taskResult.lastInsertRowid;
+
+          // Link the iSmart ticket to the new task
+          const ticketRow = db.prepare('SELECT id FROM ismart_tickets WHERE reference_id = ?').get(refId);
+          if (ticketRow) {
+            linkTicketToTask.run(taskId, ticketRow.id);
+          }
+
+          results.created.push({ rowIndex: i, referenceId: refId, taskId: Number(taskId), title });
+        }
+      } catch (err) {
+        results.failed.push({ rowIndex: i, referenceId: refId, errors: [err.message] });
+      }
+    }
+  });
+
+  importAll(tickets);
+
+  res.json({
+    ...results,
+    summary: {
+      total: tickets.length,
+      created: results.created.length,
+      updated: results.updated.length,
+      failed: results.failed.length,
+    },
+  });
+});
+
+// ─── Get iSmart ticket for a task ──────────────────────────────────────────
+
+router.get('/tasks/:id/ismart', (req, res) => {
+  const ticket = db.prepare(`
+    SELECT * FROM ismart_tickets WHERE task_id = ?
+  `).get(req.params.id);
+
+  if (!ticket) {
+    return res.status(404).json({ error: 'No iSmart ticket linked to this task' });
+  }
+
+  res.json(ticket);
+});
+
+// ─── List all iSmart tickets ────────────────────────────────────────────────
+
+router.get('/tasks/ismart-tickets', (req, res) => {
+  const { state, search, limit: lim, offset: off } = req.query;
+  const conditions = [];
+  const params = [];
+
+  if (state) { conditions.push('it.state = ?'); params.push(state); }
+  if (search) {
+    conditions.push('(it.reference_id LIKE ? OR it.short_description LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const limit = Math.min(parseInt(lim || '50', 10), 200);
+  const offset = parseInt(off || '0', 10);
+
+  const tickets = db.prepare(`
+    SELECT it.*, t.status AS task_status, t.assigned_to AS task_assigned_to,
+      u.name AS task_assigned_to_name
+    FROM ismart_tickets it
+    LEFT JOIN tasks t ON it.task_id = t.id
+    LEFT JOIN users u ON t.assigned_to = u.id
+    ORDER BY it.opened_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset);
+
+  const total = db.prepare(`SELECT COUNT(*) AS count FROM ismart_tickets it ${where}`).get(...params);
+
+  res.json({ tickets, total: total.count });
+});
+
 module.exports = router;

@@ -1,4 +1,4 @@
-/* global API, escapeHtml, currentUser */
+/* global API, escapeHtml, currentUser, Modal */
 
 const TaskDetail = {
   async render(container, id) {
@@ -16,13 +16,18 @@ const TaskDetail = {
         subtasks = result.tasks || [];
       }
 
-      TaskDetail.renderContent(container, task, comments, subtasks);
+      let ismartTicket = null;
+      if (task.source === 'ismart' && task.sourceRef) {
+        try { ismartTicket = await API.get(`/tasks/${id}/ismart`); } catch { /* no ticket linked */ }
+      }
+
+      TaskDetail.renderContent(container, task, comments, subtasks, ismartTicket);
     } catch (err) {
       container.innerHTML = `<div class="empty-state" style="text-align:center;padding:3rem"><h2>Error</h2><p>${escapeHtml(err.message)}</p></div>`;
     }
   },
 
-  renderContent(container, task, comments, subtasks) {
+  renderContent(container, task, comments, subtasks, ismartTicket) {
     const priorityColors = { urgent: 'var(--color-down)', high: '#f59e0b', medium: 'var(--color-primary)', low: 'var(--color-unknown)' };
     const today = new Date().toISOString().split('T')[0];
     const isOverdue = task.dueDate && task.status !== 'done' && task.status !== 'cancelled' && task.dueDate < today;
@@ -32,11 +37,15 @@ const TaskDetail = {
       <!-- Header -->
       <div class="detail-header">
         <div class="detail-info">
-          <h2>
-            <span class="status-dot ${task.status === 'done' ? 'up' : task.status === 'cancelled' ? 'down' : task.status === 'in_progress' ? 'up' : ''}"></span>
-            ${escapeHtml(task.title)}
-          </h2>
+          <div style="display:flex;align-items:center;gap:0.6rem">
+            <button class="btn-back" id="back-btn" title="Go back">&larr;</button>
+            <h2>
+              <span class="status-dot ${task.status === 'done' ? 'up' : task.status === 'cancelled' ? 'down' : task.status === 'in_progress' ? 'up' : ''}"></span>
+              ${escapeHtml(task.title)}
+            </h2>
+          </div>
           <div class="detail-url" style="font-size:0.82rem;color:var(--color-text-secondary)">
+            ${task.isPrivate ? '<span class="task-private-badge-detail">&#128274; Private</span>' : ''}
             ${task.recurringTemplateId ? '<span class="task-recurring-badge">recurring instance</span>' : ''}
             ${task.isRecurringTemplate ? '<span class="task-recurring-badge">recurring template</span>' : ''}
             ${task.source !== 'manual' ? `<span class="task-source-badge" style="margin-left:0.3rem">${escapeHtml(task.source)}</span>` : ''}
@@ -44,6 +53,7 @@ const TaskDetail = {
           </div>
         </div>
         <div class="detail-actions">
+          <button class="btn btn-secondary btn-sm" id="toggle-private-btn" title="${task.isPrivate ? 'Remove private flag' : 'Make private'}">${task.isPrivate ? '&#128275; Make Public' : '&#128274; Make Private'}</button>
           <a href="#/tasks/${task.id}/edit" class="btn btn-secondary btn-sm">Edit</a>
           <button class="btn btn-danger btn-sm" id="delete-task-btn">Delete</button>
         </div>
@@ -89,6 +99,77 @@ const TaskDetail = {
           <div class="stat-value"><span class="task-source-badge">${escapeHtml(task.source)}</span></div>
         </div>
       </div>
+
+      <!-- Jira Integration -->
+      ${task.jiraKey ? `
+      <div class="chart-container jira-card" style="margin-top:1.25rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+          <h3 style="font-size:0.88rem;font-weight:600;color:var(--color-text-secondary)">Linked Jira Issue</h3>
+          <div style="display:flex;gap:0.4rem">
+            <a href="${escapeHtml(task.jiraUrl || '#')}" target="_blank" class="btn btn-primary btn-sm" style="font-size:0.72rem">Open in Jira &#8599;</a>
+            <button class="btn btn-secondary btn-sm" id="sync-jira-btn" style="font-size:0.72rem">&#8635; Sync</button>
+            <button class="btn btn-danger btn-sm" id="unlink-jira-btn" style="font-size:0.72rem">Unlink</button>
+          </div>
+        </div>
+        <div class="jira-issue-info">
+          <a href="${escapeHtml(task.jiraUrl || '#')}" target="_blank" class="jira-key-link">${escapeHtml(task.jiraKey)}</a>
+          <span class="jira-status-badge ${task.jiraStatus ? ('jira-status-' + TaskDetail.jiraStatusCategory(task.jiraStatus)) : ''}">${escapeHtml(task.jiraStatus || 'Unknown')}</span>
+          <span class="jira-summary">${escapeHtml(task.jiraSummary || '')}</span>
+        </div>
+        <div style="margin-top:0.5rem;display:flex;gap:1.5rem;font-size:0.82rem">
+          <span style="color:var(--color-text-secondary)">Assignee: <strong>${escapeHtml(task.jiraAssignee || 'Unassigned')}</strong></span>
+          <span style="color:var(--color-text-secondary)">Due: <strong>${task.jiraDueDate || 'No due date'}</strong></span>
+        </div>
+        <div class="jira-synced-at">Last synced: ${TaskDetail.formatTime(task.jiraSyncedAt)}</div>
+      </div>
+      ` : `
+      <div class="chart-container" style="margin-top:1.25rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+          <h3 style="font-size:0.88rem;font-weight:600;color:var(--color-text-secondary)">Jira</h3>
+          <button class="btn btn-secondary btn-sm" id="show-link-jira-btn" style="font-size:0.72rem">+ Link Jira Issue</button>
+        </div>
+        <div id="link-jira-section" style="display:none">
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <input type="text" id="link-jira-key" placeholder="e.g. PROJ-123" style="flex:1;padding:0.4rem 0.6rem;border-radius:6px;border:1px solid var(--color-border);background:var(--color-card-bg);color:var(--color-text)">
+            <button class="btn btn-primary btn-sm" id="link-jira-submit">Link</button>
+            <button class="btn btn-secondary btn-sm" id="link-jira-cancel">Cancel</button>
+          </div>
+          <div id="link-jira-error" style="display:none;color:var(--color-down);font-size:0.78rem;margin-top:0.3rem"></div>
+        </div>
+        <p id="no-jira-text" style="color:var(--color-text-tertiary);font-size:0.82rem;margin:0">No Jira issue linked.</p>
+      </div>
+      `}
+
+      <!-- iSmart Ticket Details -->
+      ${ismartTicket ? `
+      <div class="chart-container ismart-card" style="margin-top:1.25rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+          <h3 style="font-size:0.88rem;font-weight:600;color:var(--color-text-secondary)">iSmart Ticket</h3>
+          <span class="ismart-state-badge ismart-state-${(ismartTicket.state || '').toLowerCase().replace(/\s+/g, '-')}">${escapeHtml(ismartTicket.state || 'Unknown')}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem">
+          <code style="font-size:0.82rem;color:#a78bfa;font-weight:600">${escapeHtml(ismartTicket.reference_id)}</code>
+          ${ismartTicket.internal_state ? `<span style="font-size:0.72rem;color:var(--color-text-tertiary)">${escapeHtml(ismartTicket.internal_state)}</span>` : ''}
+        </div>
+        <div class="ismart-detail-grid">
+          ${ismartTicket.priority ? `<div class="ismart-detail-item"><div class="label">iSmart Priority</div><div class="value">${escapeHtml(ismartTicket.priority)}</div></div>` : ''}
+          ${ismartTicket.category ? `<div class="ismart-detail-item"><div class="label">Category</div><div class="value">${escapeHtml(ismartTicket.category)}</div></div>` : ''}
+          ${ismartTicket.subcategory ? `<div class="ismart-detail-item"><div class="label">Subcategory</div><div class="value">${escapeHtml(ismartTicket.subcategory)}</div></div>` : ''}
+          ${ismartTicket.opened_by ? `<div class="ismart-detail-item"><div class="label">Opened By</div><div class="value">${escapeHtml(ismartTicket.opened_by)}</div></div>` : ''}
+          ${ismartTicket.assigned_to ? `<div class="ismart-detail-item"><div class="label">iSmart Assigned To</div><div class="value">${escapeHtml(ismartTicket.assigned_to)}</div></div>` : ''}
+          ${ismartTicket.group_name ? `<div class="ismart-detail-item"><div class="label">Group</div><div class="value">${escapeHtml(ismartTicket.group_name)}</div></div>` : ''}
+          ${ismartTicket.business_service ? `<div class="ismart-detail-item"><div class="label">Business Service</div><div class="value">${escapeHtml(ismartTicket.business_service)}</div></div>` : ''}
+          ${ismartTicket.opened_at ? `<div class="ismart-detail-item"><div class="label">Opened At</div><div class="value">${escapeHtml(ismartTicket.opened_at)}</div></div>` : ''}
+          ${ismartTicket.due_date ? `<div class="ismart-detail-item"><div class="label">iSmart Due Date</div><div class="value">${escapeHtml(ismartTicket.due_date)}</div></div>` : ''}
+          ${ismartTicket.hold_reason ? `<div class="ismart-detail-item"><div class="label">Hold Reason</div><div class="value">${escapeHtml(ismartTicket.hold_reason)}</div></div>` : ''}
+          ${ismartTicket.has_breached && ismartTicket.has_breached !== 'No' ? `<div class="ismart-detail-item"><div class="label">SLA Breached</div><div class="value" style="color:var(--color-down)">${escapeHtml(ismartTicket.has_breached)}</div></div>` : ''}
+          ${ismartTicket.impact ? `<div class="ismart-detail-item"><div class="label">Impact</div><div class="value">${escapeHtml(ismartTicket.impact)}</div></div>` : ''}
+          ${ismartTicket.urgency ? `<div class="ismart-detail-item"><div class="label">Urgency</div><div class="value">${escapeHtml(ismartTicket.urgency)}</div></div>` : ''}
+          ${ismartTicket.location ? `<div class="ismart-detail-item"><div class="label">Location</div><div class="value">${escapeHtml(ismartTicket.location)}</div></div>` : ''}
+          ${ismartTicket.program_name ? `<div class="ismart-detail-item"><div class="label">Program</div><div class="value">${escapeHtml(ismartTicket.program_name)}</div></div>` : ''}
+        </div>
+      </div>
+      ` : ''}
 
       <!-- Status Transition -->
       ${!task.isRecurringTemplate ? `
@@ -178,7 +259,33 @@ const TaskDetail = {
     `;
 
     // Attach event listeners
+    document.getElementById('back-btn').addEventListener('click', () => {
+      if (task.parentTaskId) {
+        location.hash = `#/tasks/${task.parentTaskId}`;
+      } else if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        location.hash = '#/tasks';
+      }
+    });
+
     document.getElementById('delete-task-btn').addEventListener('click', () => TaskDetail.remove(task.id));
+
+    // Toggle private
+    const togglePrivateBtn = document.getElementById('toggle-private-btn');
+    if (togglePrivateBtn) {
+      togglePrivateBtn.addEventListener('click', async () => {
+        const action = task.isPrivate ? 'make this task public (visible to all users)' : 'make this task private (hidden from All Tasks for other users)';
+        if (!(await Modal.confirm(`Are you sure you want to ${action}?`))) return;
+        try {
+          await API.post(`/tasks/${task.id}/toggle-private`);
+          TaskDetail.render(document.getElementById('app'), task.id);
+        } catch (err) {
+          await Modal.alert('Failed to toggle privacy: ' + err.message, 'Error');
+        }
+      });
+    }
+
     document.getElementById('add-comment-btn').addEventListener('click', () => TaskDetail.addComment(task.id));
 
     // Enter key for comment
@@ -192,6 +299,73 @@ const TaskDetail = {
     container.querySelectorAll('[data-transition]').forEach(btn => {
       btn.addEventListener('click', () => TaskDetail.transition(task.id, btn.dataset.transition));
     });
+
+    // Jira buttons
+    const syncJiraBtn = document.getElementById('sync-jira-btn');
+    if (syncJiraBtn) {
+      syncJiraBtn.addEventListener('click', async () => {
+        syncJiraBtn.textContent = 'Syncing...';
+        syncJiraBtn.disabled = true;
+        try {
+          await API.post(`/tasks/${task.id}/sync-jira`);
+          TaskDetail.render(document.getElementById('app'), task.id);
+        } catch (err) {
+          await Modal.alert('Failed to sync Jira: ' + (err.data?.details || err.message), 'Error');
+          syncJiraBtn.textContent = '↻ Sync';
+          syncJiraBtn.disabled = false;
+        }
+      });
+    }
+
+    const unlinkJiraBtn = document.getElementById('unlink-jira-btn');
+    if (unlinkJiraBtn) {
+      unlinkJiraBtn.addEventListener('click', async () => {
+        if (!(await Modal.confirm(`Unlink Jira issue ${task.jiraKey} from this task?`))) return;
+        try {
+          await API.delete(`/tasks/${task.id}/link-jira`);
+          TaskDetail.render(document.getElementById('app'), task.id);
+        } catch (err) {
+          await Modal.alert('Failed to unlink Jira: ' + err.message, 'Error');
+        }
+      });
+    }
+
+    const showLinkBtn = document.getElementById('show-link-jira-btn');
+    if (showLinkBtn) {
+      showLinkBtn.addEventListener('click', () => {
+        document.getElementById('link-jira-section').style.display = '';
+        document.getElementById('no-jira-text').style.display = 'none';
+        showLinkBtn.style.display = 'none';
+        document.getElementById('link-jira-key').focus();
+      });
+
+      document.getElementById('link-jira-cancel').addEventListener('click', () => {
+        document.getElementById('link-jira-section').style.display = 'none';
+        document.getElementById('no-jira-text').style.display = '';
+        showLinkBtn.style.display = '';
+      });
+
+      document.getElementById('link-jira-submit').addEventListener('click', async () => {
+        const key = document.getElementById('link-jira-key').value.trim().toUpperCase();
+        const errDiv = document.getElementById('link-jira-error');
+        if (!key) { errDiv.textContent = 'Please enter a Jira key'; errDiv.style.display = ''; return; }
+
+        errDiv.style.display = 'none';
+        const btn = document.getElementById('link-jira-submit');
+        btn.textContent = 'Linking...';
+        btn.disabled = true;
+
+        try {
+          await API.post(`/tasks/${task.id}/link-jira`, { jiraKey: key });
+          TaskDetail.render(document.getElementById('app'), task.id);
+        } catch (err) {
+          errDiv.textContent = err.data?.details || err.data?.errors?.join(', ') || err.message;
+          errDiv.style.display = '';
+          btn.textContent = 'Link';
+          btn.disabled = false;
+        }
+      });
+    }
   },
 
   renderTransitionButtons(task) {
@@ -226,7 +400,7 @@ const TaskDetail = {
       await API.post(`/tasks/${taskId}/transition`, { status: newStatus });
       TaskDetail.render(document.getElementById('app'), taskId);
     } catch (err) {
-      alert('Failed to update status: ' + (err.data?.errors?.join(', ') || err.message));
+      await Modal.alert('Failed to update status: ' + (err.data?.errors?.join(', ') || err.message), 'Error');
     }
   },
 
@@ -239,28 +413,36 @@ const TaskDetail = {
       await API.post(`/tasks/${taskId}/comments`, { body });
       TaskDetail.render(document.getElementById('app'), taskId);
     } catch (err) {
-      alert('Failed to add comment: ' + (err.data?.errors?.join(', ') || err.message));
+      await Modal.alert('Failed to add comment: ' + (err.data?.errors?.join(', ') || err.message), 'Error');
     }
   },
 
   async deleteComment(taskId, commentId) {
-    if (!confirm('Delete this comment?')) return;
+    if (!(await Modal.confirm('Delete this comment?'))) return;
     try {
       await API.delete(`/tasks/${taskId}/comments/${commentId}`);
       TaskDetail.render(document.getElementById('app'), taskId);
     } catch (err) {
-      alert('Failed to delete comment: ' + err.message);
+      await Modal.alert('Failed to delete comment: ' + err.message, 'Error');
     }
   },
 
   async remove(taskId) {
-    if (!confirm('Are you sure you want to delete this task? This cannot be undone.')) return;
+    if (!(await Modal.confirm('Are you sure you want to delete this task? This cannot be undone.', 'Delete Task'))) return;
     try {
       await API.delete(`/tasks/${taskId}`);
       location.hash = '#/tasks';
     } catch (err) {
-      alert('Failed to delete: ' + err.message);
+      await Modal.alert('Failed to delete: ' + err.message, 'Error');
     }
+  },
+
+  jiraStatusCategory(status) {
+    if (!status) return 'todo';
+    const s = status.toLowerCase();
+    if (s === 'done' || s === 'closed' || s === 'resolved') return 'done';
+    if (s === 'in progress' || s === 'in review' || s === 'in development') return 'indeterminate';
+    return 'todo';
   },
 
   formatTime(isoStr) {

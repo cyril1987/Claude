@@ -32,7 +32,8 @@ const MonitorForm = {
     `;
 
     container.innerHTML = `
-      <div class="form-container">
+      <div class="form-container" style="position:relative">
+        <button type="button" class="form-close-btn" id="form-close-btn" title="Close">&times;</button>
         <h2 class="form-title">${title}</h2>
         ${uploadLink}
         <div id="form-errors"></div>
@@ -111,6 +112,15 @@ const MonitorForm = {
       </div>
     `;
 
+    // Close button
+    document.getElementById('form-close-btn').addEventListener('click', () => {
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        location.hash = '#/';
+      }
+    });
+
     // Initialize custom headers UI
     const headersList = document.getElementById('custom-headers-list');
     const addBtn = document.getElementById('add-header-btn');
@@ -171,7 +181,7 @@ const MonitorForm = {
       const newName = document.getElementById('new-group-name').value.trim();
       if (!newName) return;
       if (newName.length > 100) {
-        alert('Group name must be 100 characters or fewer');
+        Modal.alert('Group name must be 100 characters or fewer', 'Validation Error');
         return;
       }
       // Check if already in the dropdown

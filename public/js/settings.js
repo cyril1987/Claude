@@ -5,11 +5,12 @@ const Settings = {
     container.innerHTML = '<div class="loading">Loading settings...</div>';
 
     try {
-      const [smtp, health] = await Promise.all([
+      const [smtp, health, jira] = await Promise.all([
         API.get('/settings/smtp'),
         Settings.fetchHealth(),
+        API.get('/settings/jira').catch(() => ({ configured: false, baseUrl: '(not set)', userEmail: '(not set)' })),
       ]);
-      Settings.renderLayout(container, smtp, health);
+      Settings.renderLayout(container, smtp, health, jira);
     } catch (err) {
       container.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
     }
@@ -25,9 +26,10 @@ const Settings = {
     }
   },
 
-  renderLayout(container, smtp, health) {
+  renderLayout(container, smtp, health, jira) {
     const isHealth = Settings.currentTab === 'health';
     const isSmtp = Settings.currentTab === 'smtp';
+    const isJira = Settings.currentTab === 'jira';
 
     container.innerHTML = `
       <div class="settings-layout">
@@ -35,6 +37,7 @@ const Settings = {
           <nav class="settings-sidebar-nav">
             <a href="javascript:void(0)" data-tab="health" class="${isHealth ? 'active' : ''}">API Health</a>
             <a href="javascript:void(0)" data-tab="smtp" class="${isSmtp ? 'active' : ''}">SMTP Configuration</a>
+            <a href="javascript:void(0)" data-tab="jira" class="${isJira ? 'active' : ''}">Jira Integration</a>
           </nav>
         </aside>
         <div class="settings-content" id="settings-panel"></div>
@@ -47,16 +50,18 @@ const Settings = {
         Settings.currentTab = link.dataset.tab;
         container.querySelectorAll('.settings-sidebar-nav a').forEach(l => l.classList.remove('active'));
         link.classList.add('active');
-        Settings.renderPanel(document.getElementById('settings-panel'), smtp, health);
+        Settings.renderPanel(document.getElementById('settings-panel'), smtp, health, jira);
       });
     });
 
-    Settings.renderPanel(document.getElementById('settings-panel'), smtp, health);
+    Settings.renderPanel(document.getElementById('settings-panel'), smtp, health, jira);
   },
 
-  renderPanel(panel, smtp, health) {
+  renderPanel(panel, smtp, health, jira) {
     if (Settings.currentTab === 'health') {
       Settings.renderHealthPanel(panel, health);
+    } else if (Settings.currentTab === 'jira') {
+      Settings.renderJiraPanel(panel, jira);
     } else {
       Settings.renderSmtpPanel(panel, smtp);
     }
@@ -290,6 +295,81 @@ const Settings = {
         `;
         btn.disabled = false;
         btn.textContent = 'Send Test Email';
+      }
+    });
+  },
+
+  // ---- Jira Integration Panel ----
+
+  renderJiraPanel(panel, jira) {
+    const statusColor = jira.configured ? 'var(--color-up)' : 'var(--color-down)';
+    const statusText = jira.configured ? 'Configured' : 'Not Configured';
+
+    panel.innerHTML = `
+      <div style="margin-bottom:2rem">
+        <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:1.5rem;letter-spacing:-0.02em">Jira Integration</h2>
+        <div class="stats-grid" style="margin-bottom:1rem;grid-template-columns:repeat(3,1fr)">
+          <div class="stat-card">
+            <div class="stat-label">Status</div>
+            <div class="stat-value" style="font-size:1rem;color:${statusColor}">${statusText}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Base URL</div>
+            <div class="stat-value" style="font-size:0.82rem;word-break:break-all">${escapeHtml(jira.baseUrl)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">User Email</div>
+            <div class="stat-value" style="font-size:0.85rem">${escapeHtml(jira.userEmail)}</div>
+          </div>
+        </div>
+        <div style="font-size:0.78rem;color:var(--color-text-tertiary)">
+          Configure Jira credentials in your <code>.env</code> file: <code>JIRA_BASE_URL</code>, <code>JIRA_USER_EMAIL</code>, <code>JIRA_API_TOKEN</code>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--color-border);padding-top:1.5rem">
+        <h3 style="font-size:0.95rem;font-weight:600;margin-bottom:0.5rem;color:var(--color-text-secondary)">Test Connection</h3>
+        <p style="font-size:0.82rem;color:var(--color-text-tertiary);margin-bottom:1rem">
+          Verify that your Jira API credentials are working correctly.
+        </p>
+        <div id="jira-test-result"></div>
+        <button class="btn btn-primary" id="test-jira-btn" ${!jira.configured ? 'disabled' : ''}>
+          Test Jira Connection
+        </button>
+      </div>
+    `;
+
+    const testBtn = document.getElementById('test-jira-btn');
+    testBtn.addEventListener('click', async () => {
+      const resultEl = document.getElementById('jira-test-result');
+      testBtn.disabled = true;
+      testBtn.textContent = 'Testing...';
+      resultEl.innerHTML = '';
+
+      try {
+        const result = await API.post('/settings/test-jira');
+        resultEl.innerHTML = `
+          <div style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:var(--radius-sm);padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:#34d399">
+            <strong>Connection successful!</strong><br>
+            Logged in as: <strong>${escapeHtml(result.displayName)}</strong> (${escapeHtml(result.emailAddress || '')})<br>
+            Server: ${escapeHtml(result.serverUrl)}
+          </div>
+        `;
+        testBtn.textContent = 'Connected!';
+        setTimeout(() => {
+          testBtn.disabled = false;
+          testBtn.textContent = 'Test Jira Connection';
+        }, 3000);
+      } catch (err) {
+        const details = err.data?.details || err.message;
+        resultEl.innerHTML = `
+          <div class="form-errors" style="margin-bottom:1rem">
+            <strong>Connection failed</strong><br>
+            ${escapeHtml(details)}
+          </div>
+        `;
+        testBtn.disabled = false;
+        testBtn.textContent = 'Test Jira Connection';
       }
     });
   },

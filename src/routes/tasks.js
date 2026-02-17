@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { validateTask } = require('../middleware/validateTask');
+const jiraService = require('../services/jiraService');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -24,12 +25,21 @@ function formatTask(row) {
     categoryName: row.category_name || null,
     categoryColor: row.category_color || null,
     parentTaskId: row.parent_task_id || null,
+    parentTaskTitle: row.parent_task_title || null,
     isRecurringTemplate: row.is_recurring_template === 1,
     recurrencePattern: row.recurrence_pattern ? JSON.parse(row.recurrence_pattern) : null,
     recurrenceNextAt: row.recurrence_next_at || null,
     recurrenceEndAt: row.recurrence_end_at || null,
     recurringTemplateId: row.recurring_template_id || null,
     subtaskCount: row.subtask_count || 0,
+    jiraKey: row.jira_key || null,
+    jiraStatus: row.jira_status || null,
+    jiraSummary: row.jira_summary || null,
+    jiraAssignee: row.jira_assignee || null,
+    jiraDueDate: row.jira_due_date || null,
+    jiraUrl: row.jira_url || null,
+    jiraSyncedAt: row.jira_synced_at || null,
+    isPrivate: row.is_private === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -71,11 +81,13 @@ function buildTaskQuery(conditions, params, { limit, offset, sort }) {
       u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
-      (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
+      (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count,
+      pt.title AS parent_task_title
     FROM tasks t
     LEFT JOIN users u1 ON t.assigned_to = u1.id
     LEFT JOIN users u2 ON t.created_by = u2.id
     LEFT JOIN task_categories c ON t.category_id = c.id
+    LEFT JOIN tasks pt ON t.parent_task_id = pt.id
     ${where}
     ORDER BY ${orderBy}
     LIMIT ? OFFSET ?
@@ -90,17 +102,27 @@ function buildTaskQuery(conditions, params, { limit, offset, sort }) {
 }
 
 function applyFilters(req) {
-  const { status, priority, category, source, dueBefore, dueAfter, search, parentTaskId } = req.query;
+  const { status, priority, category, source, dueBefore, dueAfter, search, parentTaskId, hideCompleted } = req.query;
   const conditions = ['t.is_recurring_template = 0'];
   const params = [];
 
-  if (status) { conditions.push('t.status = ?'); params.push(status); }
+  if (hideCompleted === '1') {
+    conditions.push("t.status NOT IN ('done', 'cancelled')");
+  }
+  if (status) {
+    conditions.push('t.status = ?'); params.push(status);
+  }
   if (priority) { conditions.push('t.priority = ?'); params.push(priority); }
   if (category) { conditions.push('t.category_id = ?'); params.push(parseInt(category, 10)); }
   if (source) { conditions.push('t.source = ?'); params.push(source); }
   if (dueBefore) { conditions.push('t.due_date <= ?'); params.push(dueBefore); }
   if (dueAfter) { conditions.push('t.due_date >= ?'); params.push(dueAfter); }
-  if (parentTaskId) { conditions.push('t.parent_task_id = ?'); params.push(parseInt(parentTaskId, 10)); }
+  if (parentTaskId) {
+    conditions.push('t.parent_task_id = ?'); params.push(parseInt(parentTaskId, 10));
+  } else if (!search) {
+    // When not searching and not explicitly requesting subtasks, hide subtasks from main list
+    conditions.push('t.parent_task_id IS NULL');
+  }
   if (search) {
     conditions.push('(t.title LIKE ? OR t.description LIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
@@ -240,13 +262,13 @@ router.get('/stats', (req, res) => {
       SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
       SUM(CASE WHEN due_date < date('now') AND status NOT IN ('done', 'cancelled') THEN 1 ELSE 0 END) AS overdue
     FROM tasks
-    WHERE is_recurring_template = 0 ${userFilter}
+    WHERE is_recurring_template = 0 AND parent_task_id IS NULL ${userFilter}
   `).get(...params);
 
   const byPriority = db.prepare(`
     SELECT priority, COUNT(*) AS count
     FROM tasks
-    WHERE is_recurring_template = 0 AND status NOT IN ('done', 'cancelled') ${userFilter}
+    WHERE is_recurring_template = 0 AND parent_task_id IS NULL AND status NOT IN ('done', 'cancelled') ${userFilter}
     GROUP BY priority
   `).all(...params);
 
@@ -255,6 +277,7 @@ router.get('/stats', (req, res) => {
       (SELECT name FROM users WHERE id = tasks.assigned_to) AS assigned_to_name
     FROM tasks
     WHERE is_recurring_template = 0
+      AND parent_task_id IS NULL
       AND status NOT IN ('done', 'cancelled')
       AND due_date IS NOT NULL
       AND due_date >= date('now')
@@ -323,6 +346,10 @@ router.get('/', (req, res) => {
 router.get('/all', (req, res) => {
   const { conditions, params, limit, offset, sort } = applyFilters(req);
 
+  // Private tasks: only visible to the owner (assigned_to or created_by)
+  conditions.push('(t.is_private = 0 OR t.assigned_to = ? OR t.created_by = ?)');
+  params.push(req.user.id, req.user.id);
+
   if (req.query.assignedTo) {
     conditions.push('t.assigned_to = ?');
     params.push(parseInt(req.query.assignedTo, 10));
@@ -333,6 +360,27 @@ router.get('/all', (req, res) => {
   }
 
   res.json(buildTaskQuery(conditions, params, { limit, offset, sort }));
+});
+
+// ─── Jira Search (must be before /:id to avoid matching "jira" as an ID) ──
+
+router.get('/jira/search', async (req, res) => {
+  const { q } = req.query;
+  if (!q || typeof q !== 'string' || q.trim().length === 0) {
+    return res.status(400).json({ error: 'Search query (q) is required' });
+  }
+
+  if (!jiraService.isConfigured()) {
+    return res.status(400).json({ error: 'Jira integration is not configured' });
+  }
+
+  try {
+    const issues = await jiraService.searchIssues(q.trim());
+    res.json(issues);
+  } catch (err) {
+    console.error(`[JIRA] Search error: ${err.message}`);
+    res.status(502).json({ error: 'Failed to search Jira', details: err.message });
+  }
 });
 
 // ─── Single Task ────────────────────────────────────────────────────────────
@@ -364,7 +412,7 @@ router.post('/', validateTask, (req, res) => {
   const {
     title, description, source, sourceRef, priority, status,
     dueDate, assignedTo, categoryId, parentTaskId,
-    recurrencePattern, recurrenceEndAt,
+    recurrencePattern, recurrenceEndAt, isPrivate,
   } = req.body;
 
   const isTemplate = recurrencePattern ? 1 : 0;
@@ -381,8 +429,9 @@ router.post('/', validateTask, (req, res) => {
       INSERT INTO tasks (
         title, description, source, source_ref, priority, status, due_date,
         assigned_to, created_by, category_id, parent_task_id,
-        is_recurring_template, recurrence_pattern, recurrence_next_at, recurrence_end_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        is_recurring_template, recurrence_pattern, recurrence_next_at, recurrence_end_at,
+        is_private
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       title.trim(),
       description || '',
@@ -398,7 +447,8 @@ router.post('/', validateTask, (req, res) => {
       isTemplate,
       recurrencePattern ? JSON.stringify(recurrencePattern) : null,
       recurrenceNextAt,
-      recurrenceEndAt || null
+      recurrenceEndAt || null,
+      isPrivate ? 1 : 0
     );
 
     const taskId = result.lastInsertRowid;
@@ -443,7 +493,7 @@ router.put('/:id', validateTask, (req, res) => {
   const {
     title, description, source, sourceRef, priority, status,
     dueDate, assignedTo, categoryId, parentTaskId,
-    recurrencePattern, recurrenceEndAt,
+    recurrencePattern, recurrenceEndAt, isPrivate,
   } = req.body;
 
   const isTemplate = existing.is_recurring_template;
@@ -460,6 +510,7 @@ router.put('/:id', validateTask, (req, res) => {
         title = ?, description = ?, source = ?, source_ref = ?, priority = ?,
         status = ?, due_date = ?, assigned_to = ?, category_id = ?, parent_task_id = ?,
         recurrence_pattern = ?, recurrence_next_at = ?, recurrence_end_at = ?,
+        is_private = ?,
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -476,6 +527,7 @@ router.put('/:id', validateTask, (req, res) => {
       recurrencePattern ? JSON.stringify(recurrencePattern) : existing.recurrence_pattern,
       recurrenceNextAt,
       recurrenceEndAt || existing.recurrence_end_at,
+      isPrivate !== undefined ? (isPrivate ? 1 : 0) : existing.is_private,
       req.params.id
     );
 
@@ -518,6 +570,37 @@ router.delete('/:id', (req, res) => {
 
   db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
   res.status(204).end();
+});
+
+// ─── Toggle Private ──────────────────────────────────────────────────────────
+
+router.post('/:id/toggle-private', (req, res) => {
+  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  const newPrivate = existing.is_private === 1 ? 0 : 1;
+  db.prepare('UPDATE tasks SET is_private = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newPrivate, req.params.id);
+
+  addSystemComment(existing.id, req.user.id,
+    newPrivate ? `${req.user.name} marked this task as private` : `${req.user.name} removed private flag from this task`
+  );
+
+  const task = db.prepare(`
+    SELECT t.*,
+      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u2.name AS created_by_name,
+      c.name AS category_name, c.color AS category_color,
+      (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
+    FROM tasks t
+    LEFT JOIN users u1 ON t.assigned_to = u1.id
+    LEFT JOIN users u2 ON t.created_by = u2.id
+    LEFT JOIN task_categories c ON t.category_id = c.id
+    WHERE t.id = ?
+  `).get(req.params.id);
+
+  res.json(formatTask(task));
 });
 
 // ─── Transition Status ──────────────────────────────────────────────────────
@@ -569,6 +652,164 @@ router.post('/:id/transition', (req, res) => {
   `).get(req.params.id);
 
   res.json(formatTask(task));
+});
+
+// ─── Jira Link/Unlink/Sync ──────────────────────────────────────────────────
+
+router.post('/:id/link-jira', async (req, res) => {
+  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  const { jiraKey } = req.body;
+  if (!jiraKey || typeof jiraKey !== 'string') {
+    return res.status(400).json({ errors: ['Jira issue key is required'] });
+  }
+
+  const key = jiraKey.trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(key)) {
+    return res.status(400).json({ errors: ['Jira key must be in the format PROJECT-123'] });
+  }
+
+  if (!jiraService.isConfigured()) {
+    return res.status(400).json({ error: 'Jira integration is not configured' });
+  }
+
+  try {
+    const issue = await jiraService.fetchIssue(key);
+
+    db.prepare(`
+      UPDATE tasks SET
+        jira_key = ?, jira_status = ?, jira_summary = ?, jira_assignee = ?,
+        jira_due_date = ?, jira_url = ?, jira_synced_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      issue.key, issue.status, issue.summary, issue.assignee,
+      issue.dueDate, issue.url, req.params.id
+    );
+
+    addSystemComment(
+      existing.id, req.user.id,
+      `${req.user.name} linked Jira issue ${issue.key} (status: ${issue.status})`
+    );
+
+    const task = db.prepare(`
+      SELECT t.*,
+        u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+        u2.name AS created_by_name,
+        c.name AS category_name, c.color AS category_color,
+        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
+      FROM tasks t
+      LEFT JOIN users u1 ON t.assigned_to = u1.id
+      LEFT JOIN users u2 ON t.created_by = u2.id
+      LEFT JOIN task_categories c ON t.category_id = c.id
+      WHERE t.id = ?
+    `).get(req.params.id);
+
+    res.json(formatTask(task));
+  } catch (err) {
+    console.error(`[JIRA] Link error for ${key}: ${err.message}`);
+    res.status(502).json({ error: 'Failed to fetch Jira issue', details: err.message });
+  }
+});
+
+router.delete('/:id/link-jira', (req, res) => {
+  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  if (!existing.jira_key) {
+    return res.status(400).json({ error: 'Task has no linked Jira issue' });
+  }
+
+  const oldKey = existing.jira_key;
+
+  db.prepare(`
+    UPDATE tasks SET
+      jira_key = NULL, jira_status = NULL, jira_summary = NULL,
+      jira_assignee = NULL, jira_due_date = NULL, jira_url = NULL,
+      jira_synced_at = NULL, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(req.params.id);
+
+  addSystemComment(
+    existing.id, req.user.id,
+    `${req.user.name} unlinked Jira issue ${oldKey}`
+  );
+
+  const task = db.prepare(`
+    SELECT t.*,
+      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u2.name AS created_by_name,
+      c.name AS category_name, c.color AS category_color,
+      (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
+    FROM tasks t
+    LEFT JOIN users u1 ON t.assigned_to = u1.id
+    LEFT JOIN users u2 ON t.created_by = u2.id
+    LEFT JOIN task_categories c ON t.category_id = c.id
+    WHERE t.id = ?
+  `).get(req.params.id);
+
+  res.json(formatTask(task));
+});
+
+router.post('/:id/sync-jira', async (req, res) => {
+  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  if (!existing.jira_key) {
+    return res.status(400).json({ error: 'Task has no linked Jira issue' });
+  }
+
+  if (!jiraService.isConfigured()) {
+    return res.status(400).json({ error: 'Jira integration is not configured' });
+  }
+
+  try {
+    const issue = await jiraService.fetchIssue(existing.jira_key);
+    const oldStatus = existing.jira_status;
+
+    db.prepare(`
+      UPDATE tasks SET
+        jira_status = ?, jira_summary = ?, jira_assignee = ?,
+        jira_due_date = ?, jira_url = ?, jira_synced_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      issue.status, issue.summary, issue.assignee,
+      issue.dueDate, issue.url, req.params.id
+    );
+
+    if (oldStatus && oldStatus !== issue.status) {
+      addSystemComment(
+        existing.id, req.user.id,
+        `Jira status changed: ${oldStatus} → ${issue.status}`
+      );
+    }
+
+    const task = db.prepare(`
+      SELECT t.*,
+        u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+        u2.name AS created_by_name,
+        c.name AS category_name, c.color AS category_color,
+        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
+      FROM tasks t
+      LEFT JOIN users u1 ON t.assigned_to = u1.id
+      LEFT JOIN users u2 ON t.created_by = u2.id
+      LEFT JOIN task_categories c ON t.category_id = c.id
+      WHERE t.id = ?
+    `).get(req.params.id);
+
+    res.json(formatTask(task));
+  } catch (err) {
+    console.error(`[JIRA] Sync error for ${existing.jira_key}: ${err.message}`);
+    res.status(502).json({ error: 'Failed to sync Jira issue', details: err.message });
+  }
 });
 
 // ─── Comments ───────────────────────────────────────────────────────────────

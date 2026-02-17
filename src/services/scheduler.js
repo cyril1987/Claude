@@ -100,6 +100,17 @@ async function tick() {
       console.error('[SCHEDULER] Task notification error:', err);
     }
 
+    // Sync Jira statuses (every 5 minutes, not every tick)
+    if (!tick._lastJiraSync || Date.now() - tick._lastJiraSync > 300000) {
+      try {
+        const { syncAllJiraTasks } = require('./jiraService');
+        await syncAllJiraTasks();
+        tick._lastJiraSync = Date.now();
+      } catch (err) {
+        console.error('[SCHEDULER] Jira sync error:', err);
+      }
+    }
+
     lastTickAt = new Date().toISOString();
     lastTickDurationMs = Date.now() - tickStart;
     lastTickError = null;
