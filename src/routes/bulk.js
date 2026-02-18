@@ -270,8 +270,8 @@ router.get('/tasks/ismart-tickets', async (req, res) => {
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const limit = Math.min(parseInt(lim || '50', 10), 200);
-  const offset = parseInt(off || '0', 10);
+  const limit = Math.min(parseInt(lim || '50', 10) || 50, 200);
+  const offset = parseInt(off || '0', 10) || 0;
 
   const tickets = await db.prepare(`
     SELECT it.*, t.status AS task_status, t.assigned_to AS task_assigned_to,

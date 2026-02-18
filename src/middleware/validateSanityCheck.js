@@ -22,7 +22,25 @@ function validateSanityCheckData(data) {
     errors.push('Client URL is required');
   } else {
     try {
-      new URL(data.clientUrl);
+      const parsed = new URL(data.clientUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        errors.push('Client URL must use http or https protocol');
+      }
+      // Block private/internal IPs (SSRF protection)
+      const host = parsed.hostname;
+      if (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === '::1' ||
+        host === '0.0.0.0' ||
+        host.startsWith('10.') ||
+        host.startsWith('192.168.') ||
+        host.startsWith('169.254.') ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+        /^::ffff:((127\.)|(10\.)|(192\.168\.)|(172\.(1[6-9]|2\d|3[01])\.))/.test(host)
+      ) {
+        errors.push('Client URL must not point to a private/internal address');
+      }
     } catch {
       errors.push('Client URL must be a valid URL');
     }

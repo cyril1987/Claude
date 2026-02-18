@@ -175,8 +175,8 @@ async function tick() {
       // Compute next occurrence
       const nextAt = computeNextOccurrence(pattern, tmpl.recurrence_next_at);
 
-      // Check if past end date
-      if (tmpl.recurrence_end_at && nextAt > tmpl.recurrence_end_at) {
+      // Check if past end date (normalize nextAt to YYYY-MM-DD for comparison since recurrence_end_at is date-only)
+      if (tmpl.recurrence_end_at && nextAt.split(' ')[0] > tmpl.recurrence_end_at) {
         await tx.prepare(`
           UPDATE tasks SET recurrence_next_at = ?, updated_at = datetime('now') WHERE id = ?
         `).run(null, tmpl.id); // stop recurrence

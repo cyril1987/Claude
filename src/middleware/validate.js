@@ -18,15 +18,18 @@ function validateMonitorData(data) {
       if (!parsed.hostname) {
         errors.push('url must have a valid hostname');
       }
-      // Block private/internal IPs
+      // Block private/internal IPs (SSRF protection)
       const host = parsed.hostname;
       if (
         host === 'localhost' ||
         host === '127.0.0.1' ||
         host === '::1' ||
+        host === '0.0.0.0' ||
         host.startsWith('10.') ||
         host.startsWith('192.168.') ||
-        /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+        host.startsWith('169.254.') ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+        /^::ffff:((127\.)|(10\.)|(192\.168\.)|(172\.(1[6-9]|2\d|3[01])\.))/.test(host)
       ) {
         errors.push('url must not point to a private/internal address');
       }

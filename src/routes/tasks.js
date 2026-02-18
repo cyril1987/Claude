@@ -130,11 +130,20 @@ function applyFilters(req) {
     params.push(`%${search}%`, `%${search}%`);
   }
 
-  const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
-  const offset = parseInt(req.query.offset || '0', 10);
+  const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 200);
+  const offset = parseInt(req.query.offset || '0', 10) || 0;
   const sort = req.query.sort || 'created';
 
   return { conditions, params, limit, offset, sort };
+}
+
+/** Check if the current user can access a (potentially private) task. Returns true if denied. */
+function denyPrivateAccess(task, userId, res) {
+  if (task.is_private && task.created_by !== userId && task.assigned_to !== userId) {
+    res.status(404).json({ error: 'Task not found' });
+    return true;
+  }
+  return false;
 }
 
 async function addSystemComment(taskId, userId, body) {
@@ -481,6 +490,7 @@ router.get('/:id', async (req, res) => {
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(task, req.user.id, res)) return;
 
   res.json(formatTask(task));
 });
@@ -580,6 +590,7 @@ router.put('/:id', validateTask, async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   const {
     title, description, source, sourceRef, priority, status,
@@ -669,6 +680,7 @@ router.delete('/:id', async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   await db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
   res.status(204).end();
@@ -681,6 +693,7 @@ router.post('/:id/toggle-private', async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   const newPrivate = existing.is_private === 1 ? 0 : 1;
   await db.prepare('UPDATE tasks SET is_private = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newPrivate, req.params.id);
@@ -719,6 +732,7 @@ router.post('/:id/transition', async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   if (existing.status === status) {
     return res.status(400).json({ errors: ['Task is already in this status'] });
@@ -768,6 +782,7 @@ router.post('/:id/link-jira', async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   const { jiraKey } = req.body;
   if (!jiraKey || typeof jiraKey !== 'string') {
@@ -827,6 +842,7 @@ router.delete('/:id/link-jira', async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   if (!existing.jira_key) {
     return res.status(400).json({ error: 'Task has no linked Jira issue' });
@@ -868,6 +884,7 @@ router.post('/:id/sync-jira', async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   if (!existing.jira_key) {
     return res.status(400).json({ error: 'Task has no linked Jira issue' });
@@ -922,10 +939,11 @@ router.post('/:id/sync-jira', async (req, res) => {
 // ─── Comments ───────────────────────────────────────────────────────────────
 
 router.get('/:id/comments', async (req, res) => {
-  const existing = await db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  const existing = await db.prepare('SELECT id, is_private, created_by, assigned_to FROM tasks WHERE id = ?').get(req.params.id);
   if (!existing) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   const comments = await db.prepare(`
     SELECT tc.*, u.name AS user_name, u.avatar_url AS user_avatar
@@ -939,10 +957,11 @@ router.get('/:id/comments', async (req, res) => {
 });
 
 router.post('/:id/comments', async (req, res) => {
-  const existing = await db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  const existing = await db.prepare('SELECT id, is_private, created_by, assigned_to FROM tasks WHERE id = ?').get(req.params.id);
   if (!existing) {
     return res.status(404).json({ error: 'Task not found' });
   }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   const { body } = req.body;
   if (!body || typeof body !== 'string' || body.trim().length === 0) {
@@ -967,6 +986,12 @@ router.post('/:id/comments', async (req, res) => {
 });
 
 router.delete('/:id/comments/:commentId', async (req, res) => {
+  const task = await db.prepare('SELECT id, is_private, created_by, assigned_to FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+  if (denyPrivateAccess(task, req.user.id, res)) return;
+
   const comment = await db.prepare('SELECT * FROM task_comments WHERE id = ? AND task_id = ?').get(
     req.params.commentId, req.params.id
   );
