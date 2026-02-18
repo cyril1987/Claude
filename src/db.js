@@ -139,6 +139,7 @@ async function runMigrations() {
     '010-add-ismart-tickets.sql',
     '011-add-jira-sprint.sql',
     '012-add-notification-prefs.sql',
+    '013-add-sanity-checks.sql',
   ];
 
   for (const file of migrationFiles) {
