@@ -65,6 +65,8 @@ function route() {
     Dashboard.render(app);
   } else if (hash === '/tasks/all') {
     Tasks.render(app, 'all');
+  } else if (hash === '/tasks/unassigned') {
+    Tasks.render(app, 'unassigned');
   } else if (hash === '/tasks/new' || hash.startsWith('/tasks/new?')) {
     const params = new URLSearchParams(hash.split('?')[1] || '');
     Tasks.renderForm(app, null, params.get('parent'));
