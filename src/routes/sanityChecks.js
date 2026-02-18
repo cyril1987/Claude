@@ -107,6 +107,69 @@ router.get('/discover', async (req, res) => {
   }
 });
 
+// POST /api/sanity-checks/discover-all — Discover and auto-create monitors for all checks from a client
+router.post('/discover-all', async (req, res) => {
+  try {
+    const clientUrl = (req.body.clientUrl || '').replace(/\/+$/, '');
+    if (!clientUrl) {
+      return res.status(400).json({ error: 'clientUrl is required' });
+    }
+
+    // Fetch all checks from the pulse-client
+    const response = await fetch(`${clientUrl}/api/checks`, {
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({ error: `Client returned HTTP ${response.status}` });
+    }
+
+    const checks = await response.json();
+    const activeChecks = checks.filter(c => c.isActive !== false);
+
+    let created = 0, skipped = 0;
+    const results = [];
+
+    for (const check of activeChecks) {
+      // Skip if monitor already exists for this (code, client_url)
+      const existing = await db.prepare(
+        'SELECT id FROM sanity_check_monitors WHERE code = ? AND client_url = ?'
+      ).get(check.code, clientUrl);
+
+      if (existing) {
+        skipped++;
+        results.push({ code: check.code, status: 'skipped', reason: 'already exists' });
+        continue;
+      }
+
+      await db.prepare(`
+        INSERT INTO sanity_check_monitors (code, name, client_url, check_type, expected_min, expected_max, severity, frequency_seconds, group_name, notify_email, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        check.code,
+        check.name || check.code,
+        clientUrl,
+        check.checkType || 'custom_threshold',
+        null,
+        null,
+        'medium',
+        300,
+        check.groupName || '',
+        '',
+        req.user.id
+      );
+
+      created++;
+      results.push({ code: check.code, status: 'created' });
+    }
+
+    res.json({ created, skipped, total: activeChecks.length, results });
+  } catch (err) {
+    console.error('Error in discover-all:', err);
+    res.status(502).json({ error: `Failed to reach client: ${err.message}` });
+  }
+});
+
 // GET /api/sanity-checks/:id — Single monitor with stats
 router.get('/:id', async (req, res) => {
   try {

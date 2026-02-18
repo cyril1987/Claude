@@ -36,7 +36,10 @@ const SanityChecks = {
     app.innerHTML = `
       <div class="page-header">
         <h1>Data Sanity Checks</h1>
-        <a href="#/sanity-checks/add" class="btn btn-primary">+ Add Monitor</a>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" id="btn-sync-client">Sync from Client</button>
+          <a href="#/sanity-checks/add" class="btn btn-primary">+ Add Monitor</a>
+        </div>
       </div>
 
       <div class="summary-bar">
@@ -71,6 +74,35 @@ const SanityChecks = {
         this.checkNow(btn.dataset.id, app);
       });
     });
+
+    // Bind sync button
+    const syncBtn = document.getElementById('btn-sync-client');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', () => this.syncFromClient(app));
+    }
+  },
+
+  async syncFromClient(app) {
+    const clientUrl = prompt('Enter the Pulse Client URL:', 'https://dev.iconcile.com/pulse-client');
+    if (!clientUrl) return;
+
+    const syncBtn = document.getElementById('btn-sync-client');
+    if (syncBtn) {
+      syncBtn.disabled = true;
+      syncBtn.textContent = 'Syncing...';
+    }
+
+    try {
+      const result = await API.post('/sanity-checks/discover-all', { clientUrl });
+      alert(`Sync complete: ${result.created} created, ${result.skipped} already existed (${result.total} total checks)`);
+      this.render(app);
+    } catch (err) {
+      alert('Sync failed: ' + err.message);
+      if (syncBtn) {
+        syncBtn.disabled = false;
+        syncBtn.textContent = 'Sync from Client';
+      }
+    }
   },
 
   renderGroup(group, monitors) {
