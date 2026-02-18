@@ -163,7 +163,6 @@ const Tasks = {
                 ${Tasks.currentView !== 'my' ? '<th style="width:170px">Assigned To</th>' : ''}
                 <th style="width:130px">Category</th>
                 <th style="width:120px">Due Date</th>
-                <th style="width:100px">Source</th>
               </tr>
             </thead>
             <tbody>
@@ -192,11 +191,15 @@ const Tasks = {
             ${task.isPrivate ? '<span class="task-private-badge" title="Private task">&#128274;</span>' : ''}
             <span class="task-title-text">${escapeHtml(task.title)}</span>
             ${isSubtask && task.parentTaskTitle ? `<a href="#/tasks/${task.parentTaskId}" class="task-parent-link" onclick="event.stopPropagation()" title="Parent task">${escapeHtml(task.parentTaskTitle)}</a>` : ''}
-            ${task.source === 'ismart' && task.sourceRef ? `<span class="ismart-ref-badge" title="iSmart ticket">${escapeHtml(task.sourceRef)}</span>` : ''}
             ${task.recurringTemplateId ? '<span class="task-recurring-badge">recurring</span>' : ''}
-            ${task.jiraKey ? `<a href="${escapeHtml(task.jiraUrl || '#')}" target="_blank" class="jira-inline-chip" onclick="event.stopPropagation()"><span class="jira-inline-key">${escapeHtml(task.jiraKey)}</span><span class="jira-chip-sep"></span><span class="jira-status-badge jira-status-${Tasks.jiraStatusCategory(task.jiraStatus)}" style="font-size:0.6rem;padding:0.05rem 0.3rem">${escapeHtml(task.jiraStatus || 'Unknown')}</span><span class="jira-chip-sep"></span><span class="jira-inline-meta">${escapeHtml(task.jiraAssignee || 'Unassigned')}</span></a>` : ''}
             ${task.subtaskCount > 0 ? `<span class="task-subtask-count">(${task.subtaskCount} subtask${task.subtaskCount !== 1 ? 's' : ''})</span>` : ''}
           </div>
+          ${task.jiraKey || (task.source === 'ismart' && task.sourceRef) ? `
+            <div class="task-links-row">
+              ${task.jiraKey ? `<a href="${escapeHtml(task.jiraUrl || '#')}" target="_blank" class="jira-inline-chip" onclick="event.stopPropagation()"><span class="jira-inline-key">${escapeHtml(task.jiraKey)}</span><span class="jira-chip-sep"></span><span class="jira-status-badge jira-status-${Tasks.jiraStatusCategory(task.jiraStatus)}" style="font-size:0.6rem;padding:0.05rem 0.3rem">${escapeHtml(task.jiraStatus || 'Unknown')}</span><span class="jira-chip-sep"></span><span class="jira-inline-meta">${escapeHtml(task.jiraAssignee || 'Unassigned')}</span></a>` : ''}
+              ${task.source === 'ismart' && task.sourceRef ? `<span class="ismart-ref-badge" title="iSmart ticket">${escapeHtml(task.sourceRef)}</span>` : ''}
+            </div>
+          ` : ''}
         </td>
         ${Tasks.currentView !== 'my' ? `
           <td>
@@ -206,7 +209,6 @@ const Tasks = {
         ` : ''}
         <td>${task.categoryName ? `<span class="task-category-badge" style="background:${task.categoryColor}20;color:${task.categoryColor}">${escapeHtml(task.categoryName)}</span>` : '<span style="color:var(--color-text-tertiary)">--</span>'}</td>
         <td class="${isOverdue ? 'task-overdue-date' : ''}">${task.dueDate || '<span style="color:var(--color-text-tertiary)">--</span>'}</td>
-        <td><span class="task-source-badge">${escapeHtml(task.source)}</span></td>
       </tr>
     `;
   },

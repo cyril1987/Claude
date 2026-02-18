@@ -1590,6 +1590,15 @@ select.staging-cell-input {
   text-transform: capitalize;
 }
 
+/* Links row below task title (Jira, iSmart) */
+.task-links-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+  flex-wrap: wrap;
+}
+
 /* Recurring Badge */
 .task-recurring-badge {
   font-size: 0.62rem;
