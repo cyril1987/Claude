@@ -2,19 +2,25 @@ const { sendEmail } = require('./emailSender');
 const db = require('../db');
 const config = require('../config');
 
-async function evaluateAndNotify(monitor, checkResult) {
+async function evaluateAndNotify(monitor, checkResult, { manual = false } = {}) {
   const previousStatus = monitor.current_status;
 
-  const recentChecks = await db.prepare(`
-    SELECT is_success FROM checks
-    WHERE monitor_id = ?
-    ORDER BY checked_at DESC
-    LIMIT ?
-  `).all(monitor.id, config.failuresBeforeAlert);
+  let allRecentFailed;
+  if (manual) {
+    // Manual "Check Now" — treat a single failure as immediately down
+    allRecentFailed = !checkResult.isSuccess;
+  } else {
+    const recentChecks = await db.prepare(`
+      SELECT is_success FROM checks
+      WHERE monitor_id = ?
+      ORDER BY checked_at DESC
+      LIMIT ?
+    `).all(monitor.id, config.failuresBeforeAlert);
 
-  const allRecentFailed =
-    recentChecks.length >= config.failuresBeforeAlert &&
-    recentChecks.every((c) => c.is_success === 0);
+    allRecentFailed =
+      recentChecks.length >= config.failuresBeforeAlert &&
+      recentChecks.every((c) => c.is_success === 0);
+  }
 
   let newStatus;
   if (checkResult.isSuccess) {

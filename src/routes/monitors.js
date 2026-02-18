@@ -232,7 +232,7 @@ router.post('/:id/check', async (req, res) => {
 
   try {
     const result = await checkMonitor(monitor);
-    await evaluateAndNotify(monitor, result);
+    await evaluateAndNotify(monitor, result, { manual: true });
 
     const updated = await db.prepare('SELECT * FROM monitors WHERE id = ?').get(req.params.id);
     res.json({
