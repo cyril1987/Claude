@@ -87,7 +87,7 @@ router.get('/groups', async (req, res) => {
 // GET /api/sanity-checks/discover — Fetch available checks from a client
 router.get('/discover', async (req, res) => {
   try {
-    const clientUrl = req.query.clientUrl;
+    const clientUrl = (req.query.clientUrl || '').replace(/\/+$/, '');
     if (!clientUrl) {
       return res.status(400).json({ error: 'clientUrl query parameter is required' });
     }

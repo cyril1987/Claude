@@ -37,7 +37,8 @@ async function tick() {
   }
 }
 
-async function processClient(clientUrl) {
+async function processClient(rawClientUrl) {
+  const clientUrl = rawClientUrl.replace(/\/+$/, '');
   try {
     // Step 1: Trigger execution on the client
     const triggerRes = await fetch(`${clientUrl}/api/execute-all`, {
