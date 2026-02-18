@@ -54,6 +54,14 @@ const Dashboard = {
           <div class="value unknown">${unknownCount}</div>
         </div>
       </div>
+      <div class="tasks-toolbar">
+        <div class="tasks-toolbar-row" style="justify-content:flex-end">
+          <div class="tasks-toolbar-actions">
+            <a href="#/upload" class="btn btn-secondary btn-sm">↑ Bulk Upload</a>
+            <a href="#/add" class="btn btn-primary btn-sm">+ Add Monitor</a>
+          </div>
+        </div>
+      </div>
     `;
 
     if (monitors.length === 0) {
