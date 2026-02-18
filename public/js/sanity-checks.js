@@ -296,11 +296,10 @@ const SanityChecks = {
       runAllBtn.addEventListener('click', () => this.runAll(app));
     }
 
-    // Sync button(s) — use || fallback so the empty-state button is also covered
-    const syncBtn = document.getElementById('btn-sync-client') || document.getElementById('btn-sync-client-empty');
-    if (syncBtn) {
-      syncBtn.addEventListener('click', () => this.syncFromClient(app));
-    }
+    // Sync button(s) — bind both the top-bar and empty-state buttons
+    [document.getElementById('btn-sync-client'), document.getElementById('btn-sync-client-empty')]
+      .filter(Boolean)
+      .forEach(btn => btn.addEventListener('click', () => this.syncFromClient(app)));
 
     // Group toggles
     app.querySelectorAll('.dc-group-header').forEach(header => {

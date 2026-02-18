@@ -87,9 +87,9 @@ const IsmartUpload = {
     const errDiv = document.getElementById('upload-errors');
     errDiv.innerHTML = '';
 
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 5 * 1024 * 1024; // 5MB (matches server JSON body limit)
     if (file.size > maxSize) {
-      errDiv.innerHTML = '<div class="form-errors"><div>File too large (max 10MB)</div></div>';
+      errDiv.innerHTML = '<div class="form-errors"><div>File too large (max 5MB)</div></div>';
       return;
     }
 

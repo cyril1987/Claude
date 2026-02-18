@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const config = require('../config');
-const scheduler = require('../services/scheduler');
+// Conditionally require scheduler — on Vercel it's not needed and may cause side effects
+const scheduler = process.env.VERCEL ? null : require('../services/scheduler');
 const requireAuth = require('../middleware/requireAuth');
 
 const startedAt = new Date().toISOString();

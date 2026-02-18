@@ -1,1 +1,2 @@
-ALTER TABLE monitors ADD COLUMN paused_until TEXT;
+-- paused_until column already included in 001-initial-schema.sql (no-op)
+-- ALTER TABLE monitors ADD COLUMN paused_until TEXT;

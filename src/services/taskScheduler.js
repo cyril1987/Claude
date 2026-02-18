@@ -54,11 +54,10 @@ function computeNextOccurrence(pattern, currentDateStr) {
       // If specific day of week for weekly (single day)
       if (pattern.dayOfWeek !== undefined && pattern.dayOfWeek !== null) {
         const targetDay = Array.isArray(pattern.dayOfWeek) ? pattern.dayOfWeek[0] : parseInt(pattern.dayOfWeek, 10);
-        // Advance by interval weeks, then land on the target day
-        d.setDate(d.getDate() + (7 * interval));
-        // Adjust to the target day of week
-        const diff = (targetDay - d.getDay() + 7) % 7;
-        if (diff > 0) d.setDate(d.getDate() + diff);
+        // Find the next occurrence of targetDay that is at least 1 week forward
+        let daysUntilTarget = (targetDay - d.getDay() + 7) % 7;
+        if (daysUntilTarget === 0) daysUntilTarget = 7; // At least 1 week forward
+        d.setDate(d.getDate() + daysUntilTarget + 7 * (interval - 1));
       } else {
         d.setDate(d.getDate() + (7 * interval));
       }

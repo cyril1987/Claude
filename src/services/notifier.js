@@ -64,6 +64,8 @@ async function shouldNotifyMonitor(monitorEmail) {
 }
 
 async function sendDownAlert(monitor, checkResult) {
+  if (!monitor.notify_email) return;
+
   const recent = await db.prepare(`
     SELECT COUNT(*) as count FROM notifications
     WHERE monitor_id = ? AND type = ?
@@ -102,6 +104,8 @@ async function sendDownAlert(monitor, checkResult) {
 }
 
 async function sendRecoveryAlert(monitor) {
+  if (!monitor.notify_email) return;
+
   const recent = await db.prepare(`
     SELECT COUNT(*) as count FROM notifications
     WHERE monitor_id = ? AND type = ?

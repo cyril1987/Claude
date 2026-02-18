@@ -31,9 +31,21 @@ async function checkMonitor(monitor) {
     statusCode = response.status;
     responseTimeMs = Date.now() - startTime;
 
-    // Consume a small amount of body to ensure the connection is fully established
-    const body = await response.text();
-    void body;
+    // Consume body to ensure the connection is fully established, but limit size
+    // to prevent OOM if a monitored URL returns a very large response
+    const reader = response.body.getReader();
+    let totalSize = 0;
+    const MAX_BODY = 1 * 1024 * 1024; // 1 MB limit
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalSize += value.length;
+        if (totalSize > MAX_BODY) break;
+      }
+    } finally {
+      reader.cancel();
+    }
 
     isSuccess = statusCode === monitor.expected_status;
     if (!isSuccess) {

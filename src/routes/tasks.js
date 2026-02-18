@@ -838,7 +838,7 @@ router.delete('/:id/link-jira', async (req, res) => {
     UPDATE tasks SET
       jira_key = NULL, jira_status = NULL, jira_summary = NULL,
       jira_assignee = NULL, jira_due_date = NULL, jira_url = NULL,
-      jira_synced_at = NULL, updated_at = datetime('now')
+      jira_sprint = NULL, jira_synced_at = NULL, updated_at = datetime('now')
     WHERE id = ?
   `).run(req.params.id);
 

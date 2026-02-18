@@ -21,19 +21,19 @@ function extractSprintInfo(sprintField) {
   // Priority: active > future > closed (most recent)
   const active = sprintField.find(s => s.state === 'active');
   if (active) {
-    return JSON.stringify({ label: 'Current Sprint', name: active.name || 'Current Sprint' });
+    return { label: 'Current Sprint', name: active.name || 'Current Sprint' };
   }
 
   const future = sprintField.find(s => s.state === 'future');
   if (future) {
-    return JSON.stringify({ label: 'Next Sprint', name: future.name || 'Next Sprint' });
+    return { label: 'Next Sprint', name: future.name || 'Next Sprint' };
   }
 
   // Only closed sprints remain — pick the most recent one (last in array)
   const closed = sprintField.filter(s => s.state === 'closed');
   if (closed.length > 0) {
     const latest = closed[closed.length - 1];
-    return JSON.stringify({ label: 'Past Sprint', name: latest.name || 'Past Sprint' });
+    return { label: 'Past Sprint', name: latest.name || 'Past Sprint' };
   }
 
   return null;

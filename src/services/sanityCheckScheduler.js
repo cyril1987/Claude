@@ -3,6 +3,12 @@ const { sendEmail } = require('./emailSender');
 
 let lastNotification = {};
 
+/** HTML-escape a string for safe interpolation into email HTML */
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 async function tick() {
   try {
     // Get distinct client URLs that have active monitors due for checking
@@ -234,16 +240,17 @@ async function evaluateAndNotify(monitor, result) {
           await sendEmail({
             to: monitor.notify_email,
             subject: `[SANITY CHECK FAIL] ${monitor.name} (${code})`,
+            text: `Sanity Check Failed\n\nCheck: ${monitor.name} (${code})\nClient: ${monitor.client_url}\nSeverity: ${monitor.severity}\nActual Value: ${actualValue}\nPrevious Value: ${previousValue}\nExpected: ${formatExpected(monitor)}\nExecution Time: ${executionTimeMs}ms${errorMessage ? `\nError: ${errorMessage}` : ''}\n\n-- iConcile Pulse`,
             html: `
               <h2>Sanity Check Failed</h2>
-              <p><strong>Check:</strong> ${monitor.name} (${code})</p>
-              <p><strong>Client:</strong> ${monitor.client_url}</p>
-              <p><strong>Severity:</strong> ${monitor.severity}</p>
-              <p><strong>Actual Value:</strong> ${actualValue}</p>
-              <p><strong>Previous Value:</strong> ${previousValue}</p>
-              <p><strong>Expected:</strong> ${formatExpected(monitor)}</p>
-              <p><strong>Execution Time:</strong> ${executionTimeMs}ms</p>
-              ${errorMessage ? `<p><strong>Error:</strong> ${errorMessage}</p>` : ''}
+              <p><strong>Check:</strong> ${esc(monitor.name)} (${esc(code)})</p>
+              <p><strong>Client:</strong> ${esc(monitor.client_url)}</p>
+              <p><strong>Severity:</strong> ${esc(monitor.severity)}</p>
+              <p><strong>Actual Value:</strong> ${esc(String(actualValue))}</p>
+              <p><strong>Previous Value:</strong> ${esc(String(previousValue))}</p>
+              <p><strong>Expected:</strong> ${esc(formatExpected(monitor))}</p>
+              <p><strong>Execution Time:</strong> ${esc(String(executionTimeMs))}ms</p>
+              ${errorMessage ? `<p><strong>Error:</strong> ${esc(errorMessage)}</p>` : ''}
             `,
           });
         } catch (err) {
@@ -261,12 +268,13 @@ async function evaluateAndNotify(monitor, result) {
         await sendEmail({
           to: monitor.notify_email,
           subject: `[SANITY CHECK RECOVERED] ${monitor.name} (${code})`,
+          text: `Sanity Check Recovered\n\nCheck: ${monitor.name} (${code})\nClient: ${monitor.client_url}\nCurrent Value: ${actualValue}\nPrevious Value: ${previousValue}\n\n-- iConcile Pulse`,
           html: `
             <h2>Sanity Check Recovered</h2>
-            <p><strong>Check:</strong> ${monitor.name} (${code})</p>
-            <p><strong>Client:</strong> ${monitor.client_url}</p>
-            <p><strong>Current Value:</strong> ${actualValue}</p>
-            <p><strong>Previous Value:</strong> ${previousValue}</p>
+            <p><strong>Check:</strong> ${esc(monitor.name)} (${esc(code)})</p>
+            <p><strong>Client:</strong> ${esc(monitor.client_url)}</p>
+            <p><strong>Current Value:</strong> ${esc(String(actualValue))}</p>
+            <p><strong>Previous Value:</strong> ${esc(String(previousValue))}</p>
           `,
         });
       } catch (err) {
