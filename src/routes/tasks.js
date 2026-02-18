@@ -248,7 +248,9 @@ router.get('/stats', async (req, res) => {
   let userFilter = '';
   const params = [];
 
-  if (view !== 'all') {
+  if (view === 'unassigned') {
+    userFilter = 'AND assigned_to IS NULL';
+  } else if (view !== 'all') {
     userFilter = 'AND assigned_to = ?';
     params.push(req.user.id);
   }
@@ -336,6 +338,19 @@ router.get('/recurring', async (req, res) => {
 router.get('/', async (req, res) => {
   const { conditions, params, limit, offset, sort } = applyFilters(req);
   conditions.push('t.assigned_to = ?');
+  params.push(req.user.id);
+
+  res.json(await buildTaskQuery(conditions, params, { limit, offset, sort }));
+});
+
+// ─── Unassigned Tasks ───────────────────────────────────────────────────────
+
+router.get('/unassigned', async (req, res) => {
+  const { conditions, params, limit, offset, sort } = applyFilters(req);
+  conditions.push('t.assigned_to IS NULL');
+
+  // Private tasks: only visible to the creator
+  conditions.push('(t.is_private = 0 OR t.created_by = ?)');
   params.push(req.user.id);
 
   res.json(await buildTaskQuery(conditions, params, { limit, offset, sort }));

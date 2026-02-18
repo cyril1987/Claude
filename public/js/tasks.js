@@ -20,7 +20,7 @@ const Tasks = {
     try {
       const [tasksData, stats, categories, users] = await Promise.all([
         Tasks.fetchTasks(),
-        API.get(`/tasks/stats?view=${Tasks.currentView === 'all' ? 'all' : 'my'}`),
+        API.get(`/tasks/stats?view=${Tasks.currentView}`),
         API.get('/tasks/categories'),
         API.get('/tasks/users'),
       ]);
@@ -44,7 +44,7 @@ const Tasks = {
     params.set('limit', Tasks.pageSize);
     params.set('offset', Tasks.currentPage * Tasks.pageSize);
 
-    const endpoint = Tasks.currentView === 'all' ? '/tasks/all' : '/tasks';
+    const endpoint = Tasks.currentView === 'all' ? '/tasks/all' : Tasks.currentView === 'unassigned' ? '/tasks/unassigned' : '/tasks';
     return API.get(`${endpoint}?${params.toString()}`);
   },
 
@@ -98,6 +98,7 @@ const Tasks = {
         <div class="tasks-toolbar-row">
           <div class="tasks-view-toggle">
             <a href="#/tasks" class="btn btn-sm ${Tasks.currentView === 'my' ? 'btn-primary' : 'btn-secondary'}">My Tasks</a>
+            <a href="#/tasks/unassigned" class="btn btn-sm ${Tasks.currentView === 'unassigned' ? 'btn-primary' : 'btn-secondary'}">Unassigned</a>
             <a href="#/tasks/all" class="btn btn-sm ${Tasks.currentView === 'all' ? 'btn-primary' : 'btn-secondary'}">All Tasks</a>
           </div>
           <div class="tasks-filters-inline">
@@ -159,7 +160,7 @@ const Tasks = {
                 <th style="width:100px">Status</th>
                 <th style="width:80px">Priority</th>
                 <th>Title</th>
-                ${Tasks.currentView === 'all' ? '<th style="width:170px">Assigned To</th>' : ''}
+                ${Tasks.currentView !== 'my' ? '<th style="width:170px">Assigned To</th>' : ''}
                 <th style="width:130px">Category</th>
                 <th style="width:120px">Due Date</th>
                 <th style="width:100px">Source</th>
@@ -197,7 +198,7 @@ const Tasks = {
             ${task.subtaskCount > 0 ? `<span class="task-subtask-count">(${task.subtaskCount} subtask${task.subtaskCount !== 1 ? 's' : ''})</span>` : ''}
           </div>
         </td>
-        ${Tasks.currentView === 'all' ? `
+        ${Tasks.currentView !== 'my' ? `
           <td>
             ${task.assignedToAvatar ? `<img class="task-avatar" src="${escapeHtml(task.assignedToAvatar)}" alt="" referrerpolicy="no-referrer">` : ''}
             ${task.assignedToName ? escapeHtml(task.assignedToName) : '<span style="color:var(--color-text-tertiary)">Unassigned</span>'}
