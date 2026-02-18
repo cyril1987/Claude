@@ -1,16 +1,16 @@
-name: Cron - Monitor Check
+name: Cron - Jira Sync
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 jobs:
-  monitor-check:
+  jira-sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Run monitor check
+      - name: Run Jira sync
         run: |
           curl --fail --silent --show-error \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "https://iconcile-pulse.vercel.app/api/cron/monitor-check"
+            "https://iconcile-pulse.vercel.app/api/cron/jira-sync"
