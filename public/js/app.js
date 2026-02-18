@@ -85,7 +85,7 @@ function route() {
     const id = hash.split('/')[2];
     SanityCheckDetail.render(app, id);
   } else if (hash === '/') {
-    SanityChecks.render(app);
+    Dashboard.render(app);
   } else if (hash === '/tasks/all') {
     Tasks.render(app, 'all');
   } else if (hash === '/tasks/unassigned') {
