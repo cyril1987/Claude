@@ -248,7 +248,7 @@ const Tasks = {
           Tasks.currentFilters.status = undefined;
         }
         Tasks.currentPage = 0;
-        Tasks.render(container, Tasks.currentView === 'all' ? 'all' : undefined);
+        Tasks.render(container, Tasks.currentView);
       });
     }
 
@@ -267,7 +267,7 @@ const Tasks = {
             Tasks.currentFilters.hideCompleted = false;
           }
           Tasks.currentPage = 0;
-          Tasks.render(container, Tasks.currentView === 'all' ? 'all' : undefined);
+          Tasks.render(container, Tasks.currentView);
         });
       }
     });
@@ -281,7 +281,7 @@ const Tasks = {
         searchTimeout = setTimeout(() => {
           Tasks.currentFilters.search = searchInput.value.trim() || undefined;
           Tasks.currentPage = 0;
-          Tasks.render(container, Tasks.currentView === 'all' ? 'all' : undefined);
+          Tasks.render(container, Tasks.currentView);
         }, 400);
       });
     }
@@ -294,15 +294,15 @@ const Tasks = {
         Tasks.currentFilters = { hideCompleted: keepActive };
         Tasks.currentSort = 'due_date';
         Tasks.currentPage = 0;
-        Tasks.render(container, Tasks.currentView === 'all' ? 'all' : undefined);
+        Tasks.render(container, Tasks.currentView);
       });
     }
 
     // Pagination
     const prevBtn = document.getElementById('page-prev');
     const nextBtn = document.getElementById('page-next');
-    if (prevBtn) prevBtn.addEventListener('click', () => { Tasks.currentPage--; Tasks.render(container, Tasks.currentView === 'all' ? 'all' : undefined); });
-    if (nextBtn) nextBtn.addEventListener('click', () => { Tasks.currentPage++; Tasks.render(container, Tasks.currentView === 'all' ? 'all' : undefined); });
+    if (prevBtn) prevBtn.addEventListener('click', () => { Tasks.currentPage--; Tasks.render(container, Tasks.currentView); });
+    if (nextBtn) nextBtn.addEventListener('click', () => { Tasks.currentPage++; Tasks.render(container, Tasks.currentView); });
   },
 
   // ─── Create / Edit Form ─────────────────────────────────────────────────
