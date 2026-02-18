@@ -129,8 +129,8 @@ async function processResult(clientUrl, result) {
       WHERE id = ?
     `).run(newValue, status, status, monitor.id);
 
-    // Alert only if value changed
-    if (valueChanged) {
+    // Alert on status transition OR value change
+    if (status !== previousStatus || valueChanged) {
       await evaluateAndNotify(monitor, {
         code: result.code,
         status,
@@ -182,20 +182,40 @@ async function evaluateAndNotify(monitor, result) {
 
   // On transition to fail: create task + send email
   if (status === 'fail' && previousStatus !== 'fail') {
-    // Create a task
+    // Create a task — find a valid created_by user
     try {
       const priority = mapSeverityToPriority(monitor.severity);
-      await db.prepare(`
-        INSERT INTO tasks (title, description, source, source_ref, priority, status, created_by, created_at, updated_at)
-        VALUES (?, ?, 'sanity_check', ?, ?, 'todo', ?, datetime('now'), datetime('now'))
-      `).run(
-        `[Sanity Check FAIL] ${monitor.name} (${code})`,
-        `Sanity check "${monitor.name}" (code: ${code}) failed on ${monitor.client_url}.\n\nCheck Type: ${monitor.check_type}\nActual Value: ${actualValue}\nPrevious Value: ${previousValue}\nExpected: ${formatExpected(monitor)}\nExecution Time: ${executionTimeMs}ms${errorMessage ? '\nError: ' + errorMessage : ''}`,
-        code,
-        priority,
-        monitor.created_by
-      );
-      console.log(`[SANITY-CHECK] Created task for failed check: ${code}`);
+      let createdBy = monitor.created_by;
+      // If monitor has no creator, find the first available user
+      if (!createdBy) {
+        const anyUser = await db.prepare('SELECT id FROM users LIMIT 1').get();
+        createdBy = anyUser ? anyUser.id : null;
+      }
+      // Skip task creation if no valid user exists at all
+      if (!createdBy) {
+        console.warn(`[SANITY-CHECK] No valid user for task creation on ${code}, skipping task`);
+      } else {
+        // Check for existing open task for this check to avoid duplicates
+        const existingTask = await db.prepare(`
+          SELECT id FROM tasks WHERE source = 'sanity_check' AND source_ref = ? AND status IN ('todo', 'in_progress')
+        `).get(code);
+
+        if (!existingTask) {
+          await db.prepare(`
+            INSERT INTO tasks (title, description, source, source_ref, priority, status, created_by, created_at, updated_at)
+            VALUES (?, ?, 'sanity_check', ?, ?, 'todo', ?, datetime('now'), datetime('now'))
+          `).run(
+            `[Data Check FAIL] ${monitor.name}`,
+            `Data check "${monitor.name}" (code: ${code}) failed on ${monitor.client_url}.\n\nActual Value: ${actualValue}\nPrevious Value: ${previousValue}\nExpected: ${formatExpected(monitor)}\nSeverity: ${monitor.severity}\nExecution Time: ${executionTimeMs}ms${errorMessage ? '\nError: ' + errorMessage : ''}`,
+            code,
+            priority,
+            createdBy
+          );
+          console.log(`[SANITY-CHECK] Created task for failed check: ${code}`);
+        } else {
+          console.log(`[SANITY-CHECK] Open task already exists for ${code} (task #${existingTask.id}), skipping`);
+        }
+      }
     } catch (err) {
       console.error(`[SANITY-CHECK] Failed to create task for ${code}:`, err.message);
     }
