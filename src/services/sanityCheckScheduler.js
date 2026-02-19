@@ -53,28 +53,36 @@ async function tick() {
 async function processClient(rawClientUrl) {
   const clientUrl = rawClientUrl.replace(/\/+$/, '');
   try {
-    // Step 1: Trigger execution on the client
-    const triggerRes = await fetch(`${clientUrl}/api/execute-all`, {
+    let batchResults;
+
+    // Step 1: Try async (fire-and-poll) endpoint first
+    const asyncRes = await fetch(`${clientUrl}/api/execute-all/async`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(10000),
     });
 
-    if (!triggerRes.ok) {
-      console.error(`[SANITY-CHECK] Trigger failed for ${clientUrl}: ${triggerRes.status}`);
-      await markClientError(clientUrl, `Trigger failed: HTTP ${triggerRes.status}`);
+    if (asyncRes.ok) {
+      // Async mode: poll for results
+      const { runId, totalChecks } = await asyncRes.json();
+      console.log(`[SANITY-CHECK] Async run ${runId} started on ${clientUrl} (${totalChecks} checks)`);
+
+      batchResults = await pollForResults(clientUrl, runId);
+    } else if (asyncRes.status === 404) {
+      // Fallback: older pulse-client without async support — use synchronous endpoint
+      console.log(`[SANITY-CHECK] Async not available on ${clientUrl}, falling back to sync`);
+      batchResults = await processClientSync(clientUrl);
+    } else {
+      console.error(`[SANITY-CHECK] Trigger failed for ${clientUrl}: ${asyncRes.status}`);
+      await markClientError(clientUrl, `Trigger failed: HTTP ${asyncRes.status}`);
       return;
     }
 
-    const triggerData = await triggerRes.json();
-
-    // Step 2: Process the batch results
-    // The trigger response already contains results (synchronous execution)
-    const batchResults = triggerData.results || [];
+    if (!batchResults) return; // error already handled
 
     console.log(`[SANITY-CHECK] Got ${batchResults.length} results from ${clientUrl}`);
 
-    // Step 3: Process each result
+    // Step 2: Process each result
     for (const result of batchResults) {
       await processResult(clientUrl, result);
     }
@@ -82,6 +90,59 @@ async function processClient(rawClientUrl) {
     console.error(`[SANITY-CHECK] Error processing client ${clientUrl}:`, err.message);
     await markClientError(clientUrl, err.message);
   }
+}
+
+async function pollForResults(clientUrl, runId) {
+  const POLL_INTERVAL = 3000; // 3 seconds
+  const MAX_POLL_TIME = 5 * 60 * 1000; // 5 minutes
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < MAX_POLL_TIME) {
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+
+    const statusRes = await fetch(`${clientUrl}/api/execute-all/status/${runId}`, {
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!statusRes.ok) {
+      console.error(`[SANITY-CHECK] Poll failed for run ${runId}: HTTP ${statusRes.status}`);
+      await markClientError(clientUrl, `Poll failed: HTTP ${statusRes.status}`);
+      return null;
+    }
+
+    const status = await statusRes.json();
+
+    if (status.status === 'completed') {
+      console.log(`[SANITY-CHECK] Run ${runId} completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+      return status.results || [];
+    }
+
+    // Log progress
+    if (status.completedChecks > 0) {
+      console.log(`[SANITY-CHECK] Run ${runId} progress: ${status.completedChecks}/${status.totalChecks}`);
+    }
+  }
+
+  console.error(`[SANITY-CHECK] Run ${runId} timed out after 5 minutes`);
+  await markClientError(clientUrl, `Async execution timed out after 5 minutes`);
+  return null;
+}
+
+async function processClientSync(clientUrl) {
+  const triggerRes = await fetch(`${clientUrl}/api/execute-all`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(120000),
+  });
+
+  if (!triggerRes.ok) {
+    console.error(`[SANITY-CHECK] Sync trigger failed for ${clientUrl}: ${triggerRes.status}`);
+    await markClientError(clientUrl, `Trigger failed: HTTP ${triggerRes.status}`);
+    return null;
+  }
+
+  const triggerData = await triggerRes.json();
+  return triggerData.results || [];
 }
 
 async function processResult(clientUrl, result) {
