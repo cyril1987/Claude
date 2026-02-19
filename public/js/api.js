@@ -134,6 +134,22 @@ const API = {
     return res.json();
   },
 
+  async patch(path, body) {
+    const res = await fetch(`/api${path}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    this._handleUnauthorized(res);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: res.statusText }));
+      const err = new Error(data.error || data.errors?.join(', ') || res.statusText);
+      err.data = data;
+      throw err;
+    }
+    return res.json();
+  },
+
   async delete(path) {
     const res = await fetch(`/api${path}`, { method: 'DELETE' });
     this._handleUnauthorized(res);

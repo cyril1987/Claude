@@ -10,6 +10,8 @@ const Tasks = {
   categories: [],
   users: [],
 
+  viewCounts: { my: 0, unassigned: 0, all: 0 },
+
   async render(container, view) {
     Tasks.currentView = view || 'my';
     Tasks.currentPage = 0;
@@ -18,14 +20,17 @@ const Tasks = {
     container.innerHTML = '<div class="loading" style="text-align:center;padding:3rem;color:var(--color-text-secondary)">Loading tasks...</div>';
 
     try {
-      const [tasksData, stats, categories, users] = await Promise.all([
+      const hideCompleted = Tasks.currentFilters.hideCompleted !== false ? '1' : '0';
+      const [tasksData, stats, categories, users, viewCounts] = await Promise.all([
         Tasks.fetchTasks(),
         API.get(`/tasks/stats?view=${Tasks.currentView}`),
         API.get('/tasks/categories'),
         API.get('/tasks/users'),
+        API.get(`/tasks/view-counts?hideCompleted=${hideCompleted}`),
       ]);
       Tasks.categories = categories;
       Tasks.users = users;
+      Tasks.viewCounts = viewCounts;
       Tasks.renderContent(container, tasksData, stats);
     } catch (err) {
       container.innerHTML = `<div class="empty-state" style="text-align:center;padding:3rem"><h2>Error loading tasks</h2><p>${escapeHtml(err.message)}</p></div>`;
@@ -97,9 +102,9 @@ const Tasks = {
       <div class="tasks-toolbar">
         <div class="tasks-toolbar-row">
           <div class="tasks-view-toggle">
-            <a href="#/tasks" class="btn btn-sm ${Tasks.currentView === 'my' ? 'btn-primary' : 'btn-secondary'}">My Tasks</a>
-            <a href="#/tasks/unassigned" class="btn btn-sm ${Tasks.currentView === 'unassigned' ? 'btn-primary' : 'btn-secondary'}">Unassigned</a>
-            <a href="#/tasks/all" class="btn btn-sm ${Tasks.currentView === 'all' ? 'btn-primary' : 'btn-secondary'}">All Tasks</a>
+            <a href="#/tasks" class="btn btn-sm ${Tasks.currentView === 'my' ? 'btn-primary' : 'btn-secondary'}">My Tasks <span class="tasks-view-count">${Tasks.viewCounts.my}</span></a>
+            <a href="#/tasks/unassigned" class="btn btn-sm ${Tasks.currentView === 'unassigned' ? 'btn-primary' : 'btn-secondary'}">Unassigned <span class="tasks-view-count">${Tasks.viewCounts.unassigned}</span></a>
+            <a href="#/tasks/all" class="btn btn-sm ${Tasks.currentView === 'all' ? 'btn-primary' : 'btn-secondary'}">All <span class="tasks-view-count">${Tasks.viewCounts.all}</span></a>
           </div>
           <div class="tasks-filters-inline">
             <select class="tasks-filter-chip" id="filter-status">
@@ -175,16 +180,30 @@ const Tasks = {
   },
 
   renderTaskRow(task) {
-    const priorityColors = { urgent: 'var(--color-down)', high: '#f59e0b', medium: 'var(--color-primary)', low: 'var(--color-unknown)' };
     const today = new Date().toISOString().split('T')[0];
     const isOverdue = task.dueDate && task.status !== 'done' && task.status !== 'cancelled' && task.dueDate < today;
-    const statusLabel = task.status.replace(/_/g, ' ');
     const isSubtask = !!task.parentTaskId;
+    const showAssignCol = Tasks.currentView !== 'my';
+    const canAssignToMe = !task.assignedTo || task.assignedTo !== (typeof currentUser !== 'undefined' ? currentUser.id : null);
 
     return `
       <tr class="task-row ${isOverdue ? 'task-overdue' : ''} ${isSubtask ? 'task-row-subtask' : ''}" style="cursor:pointer" onclick="location.hash='#/tasks/${task.id}'">
-        <td><span class="task-status-badge task-status-${task.status}">${escapeHtml(statusLabel)}</span></td>
-        <td><span class="task-priority-badge task-priority-${task.priority}">${escapeHtml(task.priority)}</span></td>
+        <td onclick="event.stopPropagation()">
+          <select class="task-inline-select task-inline-status task-status-${task.status}" data-task-id="${task.id}" data-field="status">
+            <option value="todo" ${task.status === 'todo' ? 'selected' : ''}>to do</option>
+            <option value="in_progress" ${task.status === 'in_progress' ? 'selected' : ''}>in progress</option>
+            <option value="done" ${task.status === 'done' ? 'selected' : ''}>done</option>
+            <option value="cancelled" ${task.status === 'cancelled' ? 'selected' : ''}>cancelled</option>
+          </select>
+        </td>
+        <td onclick="event.stopPropagation()">
+          <select class="task-inline-select task-inline-priority task-priority-${task.priority}" data-task-id="${task.id}" data-field="priority">
+            <option value="urgent" ${task.priority === 'urgent' ? 'selected' : ''}>urgent</option>
+            <option value="high" ${task.priority === 'high' ? 'selected' : ''}>high</option>
+            <option value="medium" ${task.priority === 'medium' ? 'selected' : ''}>medium</option>
+            <option value="low" ${task.priority === 'low' ? 'selected' : ''}>low</option>
+          </select>
+        </td>
         <td class="task-title-cell">
           <div class="task-title-inner">
             ${isSubtask ? '<span class="task-subtask-indicator" title="Subtask">&#8627;</span>' : ''}
@@ -201,10 +220,13 @@ const Tasks = {
             </div>
           ` : ''}
         </td>
-        ${Tasks.currentView !== 'my' ? `
-          <td>
-            ${task.assignedToAvatar ? `<img class="task-avatar" src="${escapeHtml(task.assignedToAvatar)}" alt="" referrerpolicy="no-referrer">` : ''}
-            ${task.assignedToName ? escapeHtml(task.assignedToName) : '<span style="color:var(--color-text-tertiary)">Unassigned</span>'}
+        ${showAssignCol ? `
+          <td onclick="event.stopPropagation()">
+            <div class="task-assign-cell">
+              ${task.assignedToAvatar ? `<img class="task-avatar" src="${escapeHtml(task.assignedToAvatar)}" alt="" referrerpolicy="no-referrer">` : ''}
+              ${task.assignedToName ? `<span>${escapeHtml(task.assignedToName)}</span>` : '<span style="color:var(--color-text-tertiary)">Unassigned</span>'}
+              ${canAssignToMe ? `<button class="btn-assign-me" data-task-id="${task.id}" title="Assign to me">👤 Me</button>` : ''}
+            </div>
           </td>
         ` : ''}
         <td>${task.categoryName ? `<span class="task-category-badge" style="background:${Tasks.sanitizeColor(task.categoryColor)}20;color:${Tasks.sanitizeColor(task.categoryColor)}">${escapeHtml(task.categoryName)}</span>` : '<span style="color:var(--color-text-tertiary)">--</span>'}</td>
@@ -306,6 +328,44 @@ const Tasks = {
     const nextBtn = document.getElementById('page-next');
     if (prevBtn) prevBtn.addEventListener('click', () => { Tasks.currentPage--; Tasks.render(container, Tasks.currentView); });
     if (nextBtn) nextBtn.addEventListener('click', () => { Tasks.currentPage++; Tasks.render(container, Tasks.currentView); });
+
+    // Inline status / priority selects
+    container.querySelectorAll('.task-inline-select').forEach(sel => {
+      sel.addEventListener('change', async (e) => {
+        const taskId = sel.dataset.taskId;
+        const field = sel.dataset.field;
+        const value = sel.value;
+        sel.disabled = true;
+        try {
+          await API.patch(`/tasks/${taskId}`, { [field]: value });
+          // Update the class to reflect new value
+          sel.className = `task-inline-select task-inline-${field} task-${field}-${value}`;
+        } catch (err) {
+          Modal.alert('Failed to update: ' + err.message, 'Error');
+          // Revert — reload
+          Tasks.render(container, Tasks.currentView);
+        }
+        sel.disabled = false;
+      });
+    });
+
+    // Assign to me buttons
+    container.querySelectorAll('.btn-assign-me').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const taskId = btn.dataset.taskId;
+        btn.disabled = true;
+        btn.textContent = '...';
+        try {
+          await API.post(`/tasks/${taskId}/assign-to-me`);
+          Tasks.render(container, Tasks.currentView);
+        } catch (err) {
+          Modal.alert('Failed to assign: ' + err.message, 'Error');
+          btn.disabled = false;
+          btn.textContent = '👤 Me';
+        }
+      });
+    });
   },
 
   // ─── Create / Edit Form ─────────────────────────────────────────────────

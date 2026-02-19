@@ -98,7 +98,7 @@ async function notifyStatusChange(task, oldStatus, newStatus, changedByName) {
   }
 }
 
-// ─── Check for tasks due soon (within 24 hours) ────────────────────────────
+// ─── Check for tasks due soon (within 24 hours, grouped per user) ───────────
 
 let lastDueSoonCheck = 0;
 
@@ -118,6 +118,8 @@ async function checkDueSoonTasks() {
     AND t.is_recurring_template = 0
   `).all();
 
+  // Group by user
+  const byUser = {};
   for (const task of tasks) {
     if (!(await shouldNotify(task.assigned_to, 'due_soon'))) continue;
 
@@ -128,31 +130,60 @@ async function checkDueSoonTasks() {
     `).get(task.id, 'due_soon');
     if (recent.count > 0) continue;
 
-    const subject = `[TASK] Due soon: ${task.title} — due ${task.due_date}`;
-    const text = [
-      `Task: ${task.title}`,
-      `Due Date: ${task.due_date}`,
-      `Priority: ${task.priority}`,
-      `Status: ${task.status.replace('_', ' ')}`,
+    if (!byUser[task.assigned_to]) {
+      byUser[task.assigned_to] = { email: task.user_email, name: task.user_name, tasks: [] };
+    }
+    byUser[task.assigned_to].tasks.push(task);
+  }
+
+  // Send one grouped email per user
+  for (const userId of Object.keys(byUser)) {
+    const { email, name, tasks: dueSoonTasks } = byUser[userId];
+    if (dueSoonTasks.length === 0) continue;
+
+    const subject = dueSoonTasks.length === 1
+      ? `[TASK] Due soon: ${dueSoonTasks[0].title} — due ${dueSoonTasks[0].due_date}`
+      : `[TASK] ${dueSoonTasks.length} tasks due soon`;
+
+    const lines = [
+      `Hi ${name || 'there'},`,
       '',
-      'This task is due within the next 24 hours.',
+      dueSoonTasks.length === 1
+        ? 'You have 1 task due within the next 24 hours:'
+        : `You have ${dueSoonTasks.length} tasks due within the next 24 hours:`,
       '',
-      '-- iConcile Pulse Tasks',
-    ].join('\n');
+    ];
+
+    const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
+    dueSoonTasks.sort((a, b) => (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3));
+
+    for (const t of dueSoonTasks) {
+      lines.push(`  • [${(t.priority || 'medium').toUpperCase()}] ${t.title}`);
+      lines.push(`    Due: ${t.due_date} · Status: ${t.status.replace('_', ' ')}`);
+    }
+
+    lines.push('');
+    lines.push('Please plan to complete these tasks soon.');
+    lines.push('');
+    lines.push('-- iConcile Pulse Tasks');
 
     try {
-      await sendEmail({ to: task.user_email, subject, text });
-      await db.prepare(
-        'INSERT INTO task_notifications (task_id, type, email, details) VALUES (?, ?, ?, ?)'
-      ).run(task.id, 'due_soon', task.user_email, JSON.stringify({ dueDate: task.due_date }));
-      console.log(`[TASK-NOTIFY] Due-soon notification sent for "${task.title}" to ${task.user_email}`);
+      await sendEmail({ to: email, subject, text: lines.join('\n') });
+
+      for (const t of dueSoonTasks) {
+        await db.prepare(
+          'INSERT INTO task_notifications (task_id, type, email, details) VALUES (?, ?, ?, ?)'
+        ).run(t.id, 'due_soon', email, JSON.stringify({ dueDate: t.due_date, grouped: true, groupSize: dueSoonTasks.length }));
+      }
+
+      console.log(`[TASK-NOTIFY] Grouped due-soon notification (${dueSoonTasks.length} tasks) sent to ${email}`);
     } catch (err) {
-      console.error(`[TASK-NOTIFY] Failed to send due-soon notification:`, err.message);
+      console.error(`[TASK-NOTIFY] Failed to send grouped due-soon notification to ${email}:`, err.message);
     }
   }
 }
 
-// ─── Check for overdue tasks ────────────────────────────────────────────────
+// ─── Check for overdue tasks (grouped per user) ─────────────────────────────
 
 let lastOverdueCheck = 0;
 
@@ -171,9 +202,12 @@ async function checkOverdueTasks() {
     AND t.is_recurring_template = 0
   `).all();
 
+  // Group by user
+  const byUser = {};
   for (const task of tasks) {
     if (!(await shouldNotify(task.assigned_to, 'overdue'))) continue;
 
+    // Check if already notified for this task recently
     const recent = await db.prepare(`
       SELECT COUNT(*) AS count FROM task_notifications
       WHERE task_id = ? AND type = ?
@@ -181,26 +215,57 @@ async function checkOverdueTasks() {
     `).get(task.id, 'overdue');
     if (recent.count > 0) continue;
 
-    const subject = `[TASK] Overdue: ${task.title} — was due ${task.due_date}`;
-    const text = [
-      `Task: ${task.title}`,
-      `Due Date: ${task.due_date} (OVERDUE)`,
-      `Priority: ${task.priority}`,
-      `Status: ${task.status.replace('_', ' ')}`,
+    if (!byUser[task.assigned_to]) {
+      byUser[task.assigned_to] = { email: task.user_email, name: task.user_name, tasks: [] };
+    }
+    byUser[task.assigned_to].tasks.push(task);
+  }
+
+  // Send one grouped email per user
+  for (const userId of Object.keys(byUser)) {
+    const { email, name, tasks: overdueTasks } = byUser[userId];
+    if (overdueTasks.length === 0) continue;
+
+    const subject = overdueTasks.length === 1
+      ? `[TASK] Overdue: ${overdueTasks[0].title} — was due ${overdueTasks[0].due_date}`
+      : `[TASK] ${overdueTasks.length} overdue tasks need your attention`;
+
+    const lines = [
+      `Hi ${name || 'there'},`,
       '',
-      'This task is past its due date. Please complete it as soon as possible.',
+      overdueTasks.length === 1
+        ? 'You have 1 overdue task:'
+        : `You have ${overdueTasks.length} overdue tasks:`,
       '',
-      '-- iConcile Pulse Tasks',
-    ].join('\n');
+    ];
+
+    // Sort by priority (urgent first) then by due date
+    const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
+    overdueTasks.sort((a, b) => (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3) || (a.due_date || '').localeCompare(b.due_date || ''));
+
+    for (const t of overdueTasks) {
+      lines.push(`  • [${(t.priority || 'medium').toUpperCase()}] ${t.title}`);
+      lines.push(`    Due: ${t.due_date} · Status: ${t.status.replace('_', ' ')}`);
+    }
+
+    lines.push('');
+    lines.push('Please complete these tasks as soon as possible.');
+    lines.push('');
+    lines.push('-- iConcile Pulse Tasks');
 
     try {
-      await sendEmail({ to: task.user_email, subject, text });
-      await db.prepare(
-        'INSERT INTO task_notifications (task_id, type, email, details) VALUES (?, ?, ?, ?)'
-      ).run(task.id, 'overdue', task.user_email, JSON.stringify({ dueDate: task.due_date }));
-      console.log(`[TASK-NOTIFY] Overdue notification sent for "${task.title}" to ${task.user_email}`);
+      await sendEmail({ to: email, subject, text: lines.join('\n') });
+
+      // Log notifications for each task
+      for (const t of overdueTasks) {
+        await db.prepare(
+          'INSERT INTO task_notifications (task_id, type, email, details) VALUES (?, ?, ?, ?)'
+        ).run(t.id, 'overdue', email, JSON.stringify({ dueDate: t.due_date, grouped: true, groupSize: overdueTasks.length }));
+      }
+
+      console.log(`[TASK-NOTIFY] Grouped overdue notification (${overdueTasks.length} tasks) sent to ${email}`);
     } catch (err) {
-      console.error(`[TASK-NOTIFY] Failed to send overdue notification:`, err.message);
+      console.error(`[TASK-NOTIFY] Failed to send grouped overdue notification to ${email}:`, err.message);
     }
   }
 }

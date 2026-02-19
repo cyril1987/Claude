@@ -315,6 +315,40 @@ router.get('/users', async (req, res) => {
   })));
 });
 
+// ─── View Counts (for tab badges) ───────────────────────────────────────────
+
+router.get('/view-counts', async (req, res) => {
+  const hideCompleted = req.query.hideCompleted === '1';
+  const statusFilter = hideCompleted ? "AND status NOT IN ('done', 'cancelled')" : '';
+
+  const myCount = await db.prepare(`
+    SELECT COUNT(*) AS count FROM tasks
+    WHERE is_recurring_template = 0 AND parent_task_id IS NULL
+    AND assigned_to = ? ${statusFilter}
+  `).get(req.user.id);
+
+  const unassignedCount = await db.prepare(`
+    SELECT COUNT(*) AS count FROM tasks
+    WHERE is_recurring_template = 0 AND parent_task_id IS NULL
+    AND assigned_to IS NULL
+    AND (is_private = 0 OR created_by = ?)
+    ${statusFilter}
+  `).get(req.user.id);
+
+  const allCount = await db.prepare(`
+    SELECT COUNT(*) AS count FROM tasks
+    WHERE is_recurring_template = 0 AND parent_task_id IS NULL
+    AND (is_private = 0 OR assigned_to = ? OR created_by = ?)
+    ${statusFilter}
+  `).get(req.user.id, req.user.id);
+
+  res.json({
+    my: myCount.count || 0,
+    unassigned: unassignedCount.count || 0,
+    all: allCount.count || 0,
+  });
+});
+
 // ─── Stats ──────────────────────────────────────────────────────────────────
 
 router.get('/stats', async (req, res) => {
@@ -765,6 +799,117 @@ router.post('/:id/transition', async (req, res) => {
   notifyStatusChange(existing, existing.status, status, req.user.name).catch(err => {
     console.error('[TASK-NOTIFY] Status change notification error:', err.message);
   });
+
+  const task = await db.prepare(`
+    SELECT t.*,
+      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u2.name AS created_by_name,
+      c.name AS category_name, c.color AS category_color,
+      (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
+    FROM tasks t
+    LEFT JOIN users u1 ON t.assigned_to = u1.id
+    LEFT JOIN users u2 ON t.created_by = u2.id
+    LEFT JOIN task_categories c ON t.category_id = c.id
+    WHERE t.id = ?
+  `).get(req.params.id);
+
+  res.json(formatTask(task));
+});
+
+// ─── Assign To Me ──────────────────────────────────────────────────────────
+
+router.post('/:id/assign-to-me', async (req, res) => {
+  const existing = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
+
+  if (existing.assigned_to === req.user.id) {
+    return res.status(400).json({ error: 'Task is already assigned to you' });
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.prepare(
+      "UPDATE tasks SET assigned_to = ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(req.user.id, req.params.id);
+
+    await tx.prepare(
+      'INSERT INTO task_comments (task_id, user_id, body, is_system) VALUES (?, ?, ?, 1)'
+    ).run(existing.id, req.user.id, `${req.user.name} assigned this task to themselves`);
+  });
+
+  const task = await db.prepare(`
+    SELECT t.*,
+      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u2.name AS created_by_name,
+      c.name AS category_name, c.color AS category_color,
+      (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
+    FROM tasks t
+    LEFT JOIN users u1 ON t.assigned_to = u1.id
+    LEFT JOIN users u2 ON t.created_by = u2.id
+    LEFT JOIN task_categories c ON t.category_id = c.id
+    WHERE t.id = ?
+  `).get(req.params.id);
+
+  res.json(formatTask(task));
+});
+
+// ─── Quick Update (inline status/priority from list view) ────────────────────
+
+router.patch('/:id', async (req, res) => {
+  const existing = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+  if (denyPrivateAccess(existing, req.user.id, res)) return;
+
+  const { status, priority } = req.body;
+  const validStatuses = ['todo', 'in_progress', 'done', 'cancelled'];
+  const validPriorities = ['low', 'medium', 'high', 'urgent'];
+  const updates = [];
+  const values = [];
+
+  if (status !== undefined) {
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ errors: [`Status must be one of: ${validStatuses.join(', ')}`] });
+    }
+    updates.push('status = ?');
+    values.push(status);
+  }
+
+  if (priority !== undefined) {
+    if (!validPriorities.includes(priority)) {
+      return res.status(400).json({ errors: [`Priority must be one of: ${validPriorities.join(', ')}`] });
+    }
+    updates.push('priority = ?');
+    values.push(priority);
+  }
+
+  if (updates.length === 0) {
+    return res.status(400).json({ errors: ['Nothing to update'] });
+  }
+
+  updates.push("updated_at = datetime('now')");
+  values.push(req.params.id);
+
+  await db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+  // System comments for changes
+  if (status && status !== existing.status) {
+    const oldLabel = existing.status.replace('_', ' ');
+    const newLabel = status.replace('_', ' ');
+    await addSystemComment(existing.id, req.user.id, `${req.user.name} changed status from ${oldLabel} to ${newLabel}`);
+
+    // Fire-and-forget: notify status change
+    notifyStatusChange(existing, existing.status, status, req.user.name).catch(err => {
+      console.error('[TASK-NOTIFY] Status change notification error:', err.message);
+    });
+  }
+
+  if (priority && priority !== existing.priority) {
+    await addSystemComment(existing.id, req.user.id, `${req.user.name} changed priority from ${existing.priority} to ${priority}`);
+  }
 
   const task = await db.prepare(`
     SELECT t.*,
