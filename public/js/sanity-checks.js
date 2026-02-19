@@ -243,7 +243,7 @@ const SanityChecks = {
         </button>
         ${isExpanded ? `
           <div class="dc-env-body">
-            ${this.renderExceptionsList(filteredMonitors)}
+            ${this.renderGroupedList(filteredMonitors)}
           </div>
         ` : ''}
       </div>
