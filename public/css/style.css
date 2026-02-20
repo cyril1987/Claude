@@ -1869,6 +1869,21 @@ select.staging-cell-input {
   margin-bottom: 0.35rem;
 }
 
+.comment-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(42, 157, 143, 0.2);
+  color: var(--color-primary);
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 1;
+}
+
 .task-comment-author {
   font-weight: 600;
   font-size: 0.82rem;

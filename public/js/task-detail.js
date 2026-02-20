@@ -232,7 +232,7 @@ const TaskDetail = {
         ${comments.length > 0 ? comments.map(c => `
           <div class="task-comment">
             <div class="task-comment-header">
-              ${c.userAvatar ? `<img class="task-avatar" src="${escapeHtml(c.userAvatar)}" alt="" referrerpolicy="no-referrer">` : ''}
+              <span class="task-avatar-placeholder comment-avatar" title="${escapeHtml(c.userName || '?')}">${escapeHtml((c.userName || '?').charAt(0).toUpperCase())}</span>
               <span class="task-comment-author">${escapeHtml(c.userName || 'Unknown')}</span>
               <span class="task-comment-time">${TaskDetail.formatTime(c.createdAt)}</span>
               ${!c.isSystem && c.userId === currentUser?.id ? `<button class="btn btn-danger btn-sm" style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem" onclick="TaskDetail.deleteComment(${task.id}, ${c.id})">Delete</button>` : ''}

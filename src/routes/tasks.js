@@ -53,7 +53,6 @@ function formatComment(row) {
     taskId: row.task_id,
     userId: row.user_id,
     userName: row.user_name || null,
-    userAvatar: row.user_avatar || null,
     body: row.body,
     isSystem: row.is_system === 1,
     createdAt: row.created_at,
@@ -1361,7 +1360,8 @@ router.get('/:id/comments', async (req, res) => {
   if (denyPrivateAccess(existing, req.user.id, res)) return;
 
   const comments = await db.prepare(`
-    SELECT tc.*, u.name AS user_name, u.avatar_url AS user_avatar
+    SELECT tc.id, tc.task_id, tc.user_id, tc.body, tc.is_system, tc.created_at,
+      u.name AS user_name
     FROM task_comments tc
     LEFT JOIN users u ON tc.user_id = u.id
     WHERE tc.task_id = ?
@@ -1391,7 +1391,8 @@ router.post('/:id/comments', async (req, res) => {
   ).run(req.params.id, req.user.id, body.trim());
 
   const comment = await db.prepare(`
-    SELECT tc.*, u.name AS user_name, u.avatar_url AS user_avatar
+    SELECT tc.id, tc.task_id, tc.user_id, tc.body, tc.is_system, tc.created_at,
+      u.name AS user_name
     FROM task_comments tc
     LEFT JOIN users u ON tc.user_id = u.id
     WHERE tc.id = ?
