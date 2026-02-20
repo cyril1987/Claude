@@ -113,12 +113,19 @@ const Tasks = {
     const hasFilters = f.status || f.priority || f.category || f.source || f.search || f.assignedTo;
     return `
       <div class="tasks-toolbar">
-        <div class="tasks-toolbar-row">
+        <div class="tasks-toolbar-top">
           <div class="tasks-view-toggle">
             <a href="#/tasks" class="btn btn-sm ${Tasks.currentView === 'my' ? 'btn-primary' : 'btn-secondary'}">My Tasks <span class="tasks-view-count">${Tasks.viewCounts.my}</span></a>
             <a href="#/tasks/unassigned" class="btn btn-sm ${Tasks.currentView === 'unassigned' ? 'btn-primary' : 'btn-secondary'}">Unassigned <span class="tasks-view-count">${Tasks.viewCounts.unassigned}</span></a>
             <a href="#/tasks/all" class="btn btn-sm ${Tasks.currentView === 'all' ? 'btn-primary' : 'btn-secondary'}">All <span class="tasks-view-count">${Tasks.viewCounts.all}</span></a>
           </div>
+          <div class="tasks-toolbar-actions">
+            <a href="#/tasks/dashboard" class="btn btn-secondary btn-sm" title="Personal dashboard">📊 Dashboard</a>
+            <a href="#/tasks/ismart-upload" class="btn btn-secondary btn-sm" title="Upload iSmart tickets">↑ iSmart</a>
+            <a href="#/tasks/new" class="btn btn-primary btn-sm">+ New Task</a>
+          </div>
+        </div>
+        <div class="tasks-toolbar-bottom">
           <div class="tasks-filters-inline">
             <select class="tasks-filter-chip" id="filter-status">
               <option value="">Status</option>
@@ -153,7 +160,7 @@ const Tasks = {
             </select>` : ''}
             ${hasFilters ? '<button class="tasks-clear-filters" id="clear-filters" title="Clear all filters">&times;</button>' : ''}
           </div>
-          <div class="tasks-toolbar-actions">
+          <div class="tasks-toolbar-right">
             <label class="tasks-completed-toggle" title="Show completed and cancelled tasks">
               <input type="checkbox" id="toggle-completed" ${showCompleted ? 'checked' : ''}>
               <span>Show Completed</span>
@@ -165,10 +172,8 @@ const Tasks = {
               <option value="created" ${Tasks.currentSort === 'created' ? 'selected' : ''}>Sort: Created</option>
               <option value="status" ${Tasks.currentSort === 'status' ? 'selected' : ''}>Sort: Status</option>
             </select>
+            <span class="tasks-separator"></span>
             <input type="text" id="task-search" class="tasks-search-input" placeholder="Search..." value="${escapeHtml(f.search || '')}">
-            <a href="#/tasks/dashboard" class="btn btn-secondary btn-sm" title="Personal dashboard">📊 Dashboard</a>
-            <a href="#/tasks/ismart-upload" class="btn btn-secondary btn-sm" title="Upload iSmart tickets">↑ iSmart</a>
-            <a href="#/tasks/new" class="btn btn-primary btn-sm">+ New Task</a>
           </div>
         </div>
       </div>

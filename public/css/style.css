@@ -1317,13 +1317,31 @@ select.staging-cell-input {
 /* Tasks Toolbar */
 .tasks-toolbar {
   margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-.tasks-toolbar-row {
+.tasks-toolbar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.tasks-toolbar-bottom {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
+}
+
+.tasks-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .tasks-view-toggle {
@@ -2301,9 +2319,11 @@ img.td-row-avatar {
   .settings-sidebar { width: 100%; position: static; }
   .settings-sidebar-nav { flex-direction: row; overflow-x: auto; gap: 0.15rem; }
   .settings-sidebar-nav a { white-space: nowrap; }
-  .tasks-toolbar-row { flex-direction: column; align-items: stretch; }
+  .tasks-toolbar-top { flex-wrap: wrap; }
+  .tasks-toolbar-bottom { flex-wrap: wrap; }
+  .tasks-toolbar-right { margin-left: 0; flex-wrap: wrap; }
+  .tasks-toolbar-actions { flex-wrap: wrap; }
   .tasks-filters-inline { flex-wrap: wrap; }
-  .tasks-toolbar-actions { margin-left: 0; }
   .task-title-cell { min-width: 0; }
   .task-comment-input-wrapper { flex-direction: column; }
 }
