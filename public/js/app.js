@@ -72,6 +72,10 @@ function route() {
     clearInterval(MonitorDetail._countdownTimer);
     MonitorDetail._countdownTimer = null;
   }
+  if (typeof TaskDashboard !== 'undefined' && TaskDashboard.refreshTimer) {
+    clearInterval(TaskDashboard.refreshTimer);
+    TaskDashboard.refreshTimer = null;
+  }
   if (hash === '/sanity-checks') {
     SanityChecks.render(app);
   } else if (hash === '/sanity-checks/add') {
@@ -84,6 +88,10 @@ function route() {
     SanityCheckDetail.render(app, id);
   } else if (hash === '/') {
     Dashboard.render(app);
+  } else if (hash === '/tasks/dashboard') {
+    TaskDashboard.render(app, 'personal');
+  } else if (hash === '/tasks/standup') {
+    TaskDashboard.render(app, 'standup');
   } else if (hash === '/tasks/all') {
     Tasks.render(app, 'all');
   } else if (hash === '/tasks/unassigned') {

@@ -349,6 +349,238 @@ router.get('/view-counts', async (req, res) => {
   });
 });
 
+// ─── Task Dashboard ──────────────────────────────────────────────────────────
+// Rich metrics for personal dashboard and standup overview.
+// ?userId=<id>  — filter to a specific user (standup mode); defaults to current user for personal view
+// ?view=personal|standup  — personal = current user only, standup = team-wide (optionally filtered)
+
+router.get('/dashboard', async (req, res) => {
+  try {
+    const isStandup = req.query.view === 'standup';
+    const filterUserId = req.query.userId ? parseInt(req.query.userId, 10) : null;
+
+    // Visibility: users can only see non-private tasks (or their own private ones)
+    const privacyClause = `(t.is_private = 0 OR t.assigned_to = ${req.user.id} OR t.created_by = ${req.user.id})`;
+
+    // User scope for standup vs personal
+    let userScope;
+    if (isStandup && filterUserId) {
+      userScope = `AND t.assigned_to = ${db.escape ? db.escape(filterUserId) : filterUserId}`;
+    } else if (isStandup) {
+      userScope = ''; // all users
+    } else {
+      userScope = `AND t.assigned_to = ${req.user.id}`;
+    }
+
+    const baseWhere = `WHERE t.is_recurring_template = 0 AND t.parent_task_id IS NULL AND ${privacyClause} ${userScope}`;
+
+    // ── 1. Overall counts ────────────────────────────────────────────────────
+    const counts = await db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN t.status = 'todo'        THEN 1 ELSE 0 END) AS todo,
+        SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress,
+        SUM(CASE WHEN t.status = 'done'        THEN 1 ELSE 0 END) AS done,
+        SUM(CASE WHEN t.status = 'cancelled'   THEN 1 ELSE 0 END) AS cancelled,
+        SUM(CASE WHEN t.due_date < date('now') AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END) AS overdue,
+        SUM(CASE WHEN t.due_date = date('now') AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END) AS due_today,
+        SUM(CASE WHEN t.due_date BETWEEN date('now','+1 day') AND date('now','+7 days') AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END) AS due_this_week,
+        SUM(CASE WHEN t.priority = 'urgent'    AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END) AS urgent_open,
+        SUM(CASE WHEN t.priority = 'high'      AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END) AS high_open,
+        SUM(CASE WHEN t.updated_at >= datetime('now','-1 day') AND t.status = 'done'    THEN 1 ELSE 0 END) AS completed_today,
+        SUM(CASE WHEN t.updated_at >= datetime('now','-7 days') AND t.status = 'done'   THEN 1 ELSE 0 END) AS completed_this_week
+      FROM tasks t
+      ${baseWhere}
+    `).get();
+
+    // ── 2. By priority breakdown ─────────────────────────────────────────────
+    const byPriority = await db.prepare(`
+      SELECT t.priority, COUNT(*) AS count
+      FROM tasks t
+      ${baseWhere} AND t.status NOT IN ('done','cancelled')
+      GROUP BY t.priority
+    `).all();
+
+    // ── 3. By category breakdown ─────────────────────────────────────────────
+    const byCategory = await db.prepare(`
+      SELECT c.name AS category, c.color, COUNT(*) AS count
+      FROM tasks t
+      LEFT JOIN task_categories c ON t.category_id = c.id
+      ${baseWhere} AND t.status NOT IN ('done','cancelled')
+      GROUP BY t.category_id
+      ORDER BY count DESC
+      LIMIT 8
+    `).all();
+
+    // ── 4. By source ─────────────────────────────────────────────────────────
+    const bySource = await db.prepare(`
+      SELECT t.source, COUNT(*) AS count
+      FROM tasks t
+      ${baseWhere} AND t.status NOT IN ('done','cancelled')
+      GROUP BY t.source
+    `).all();
+
+    // ── 5. Overdue tasks (up to 20, sorted urgency first) ────────────────────
+    const overdueTasks = await db.prepare(`
+      SELECT t.id, t.title, t.priority, t.status, t.due_date,
+        t.assigned_to, u.name AS assigned_to_name, u.avatar_url AS assigned_to_avatar,
+        c.name AS category_name, c.color AS category_color,
+        CAST((julianday('now') - julianday(t.due_date)) AS INTEGER) AS days_overdue
+      FROM tasks t
+      LEFT JOIN users u ON t.assigned_to = u.id
+      LEFT JOIN task_categories c ON t.category_id = c.id
+      ${baseWhere}
+        AND t.due_date < date('now')
+        AND t.status NOT IN ('done','cancelled')
+      ORDER BY
+        CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+        t.due_date ASC
+      LIMIT 20
+    `).all();
+
+    // ── 6. Due today ─────────────────────────────────────────────────────────
+    const dueTodayTasks = await db.prepare(`
+      SELECT t.id, t.title, t.priority, t.status, t.due_date,
+        t.assigned_to, u.name AS assigned_to_name, u.avatar_url AS assigned_to_avatar,
+        c.name AS category_name, c.color AS category_color
+      FROM tasks t
+      LEFT JOIN users u ON t.assigned_to = u.id
+      LEFT JOIN task_categories c ON t.category_id = c.id
+      ${baseWhere}
+        AND t.due_date = date('now')
+        AND t.status NOT IN ('done','cancelled')
+      ORDER BY
+        CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+    `).all();
+
+    // ── 7. In Progress tasks ──────────────────────────────────────────────────
+    const inProgressTasks = await db.prepare(`
+      SELECT t.id, t.title, t.priority, t.status, t.due_date,
+        t.assigned_to, u.name AS assigned_to_name, u.avatar_url AS assigned_to_avatar,
+        c.name AS category_name, c.color AS category_color
+      FROM tasks t
+      LEFT JOIN users u ON t.assigned_to = u.id
+      LEFT JOIN task_categories c ON t.category_id = c.id
+      ${baseWhere}
+        AND t.status = 'in_progress'
+      ORDER BY
+        CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+        t.due_date ASC NULLS LAST
+      LIMIT 20
+    `).all();
+
+    // ── 8. Completed today / this week ───────────────────────────────────────
+    const recentlyCompleted = await db.prepare(`
+      SELECT t.id, t.title, t.priority, t.updated_at,
+        t.assigned_to, u.name AS assigned_to_name,
+        c.name AS category_name, c.color AS category_color
+      FROM tasks t
+      LEFT JOIN users u ON t.assigned_to = u.id
+      LEFT JOIN task_categories c ON t.category_id = c.id
+      ${baseWhere}
+        AND t.status = 'done'
+        AND t.updated_at >= datetime('now','-7 days')
+      ORDER BY t.updated_at DESC
+      LIMIT 15
+    `).all();
+
+    // ── 9. Per-user breakdown (standup mode) ─────────────────────────────────
+    let byUser = [];
+    if (isStandup) {
+      byUser = await db.prepare(`
+        SELECT
+          u.id, u.name, u.avatar_url,
+          COUNT(*) AS total,
+          SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress,
+          SUM(CASE WHEN t.status = 'todo'         THEN 1 ELSE 0 END) AS todo,
+          SUM(CASE WHEN t.due_date < date('now') AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END) AS overdue,
+          SUM(CASE WHEN t.updated_at >= datetime('now','-1 day') AND t.status = 'done'    THEN 1 ELSE 0 END) AS completed_today,
+          SUM(CASE WHEN t.priority = 'urgent' AND t.status NOT IN ('done','cancelled')     THEN 1 ELSE 0 END) AS urgent_open,
+          SUM(CASE WHEN t.due_date = date('now') AND t.status NOT IN ('done','cancelled')  THEN 1 ELSE 0 END) AS due_today
+        FROM tasks t
+        JOIN users u ON t.assigned_to = u.id
+        WHERE t.is_recurring_template = 0 AND t.parent_task_id IS NULL AND ${privacyClause}
+          AND t.status NOT IN ('done','cancelled')
+        GROUP BY u.id
+        ORDER BY overdue DESC, in_progress DESC, u.name ASC
+      `).all();
+    }
+
+    // ── 10. Velocity — completions per day for last 14 days ─────────────────
+    const velocity = await db.prepare(`
+      SELECT date(t.updated_at) AS day, COUNT(*) AS completed
+      FROM tasks t
+      ${baseWhere}
+        AND t.status = 'done'
+        AND t.updated_at >= datetime('now','-14 days')
+      GROUP BY date(t.updated_at)
+      ORDER BY day ASC
+    `).all();
+
+    // Build full 14-day array (fill gaps with 0)
+    const velocityMap = {};
+    for (const row of velocity) velocityMap[row.day] = row.completed;
+    const velocityDays = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      velocityDays.push({ day: key, completed: velocityMap[key] || 0 });
+    }
+
+    res.json({
+      counts: {
+        total: counts.total || 0,
+        todo: counts.todo || 0,
+        inProgress: counts.in_progress || 0,
+        done: counts.done || 0,
+        cancelled: counts.cancelled || 0,
+        overdue: counts.overdue || 0,
+        dueToday: counts.due_today || 0,
+        dueThisWeek: counts.due_this_week || 0,
+        urgentOpen: counts.urgent_open || 0,
+        highOpen: counts.high_open || 0,
+        completedToday: counts.completed_today || 0,
+        completedThisWeek: counts.completed_this_week || 0,
+      },
+      byPriority: byPriority.reduce((a, r) => { a[r.priority] = r.count; return a; }, {}),
+      byCategory: byCategory.map(r => ({ category: r.category || 'Uncategorised', color: r.color || '#6b7280', count: r.count })),
+      bySource: bySource.reduce((a, r) => { a[r.source] = r.count; return a; }, {}),
+      overdueTasks: overdueTasks.map(t => ({
+        id: t.id, title: t.title, priority: t.priority, status: t.status,
+        dueDate: t.due_date, daysOverdue: t.days_overdue,
+        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name, assignedToAvatar: t.assigned_to_avatar,
+        categoryName: t.category_name, categoryColor: t.category_color,
+      })),
+      dueTodayTasks: dueTodayTasks.map(t => ({
+        id: t.id, title: t.title, priority: t.priority, status: t.status, dueDate: t.due_date,
+        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name, assignedToAvatar: t.assigned_to_avatar,
+        categoryName: t.category_name, categoryColor: t.category_color,
+      })),
+      inProgressTasks: inProgressTasks.map(t => ({
+        id: t.id, title: t.title, priority: t.priority, status: t.status, dueDate: t.due_date,
+        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name, assignedToAvatar: t.assigned_to_avatar,
+        categoryName: t.category_name, categoryColor: t.category_color,
+      })),
+      recentlyCompleted: recentlyCompleted.map(t => ({
+        id: t.id, title: t.title, priority: t.priority, completedAt: t.updated_at,
+        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name,
+        categoryName: t.category_name, categoryColor: t.category_color,
+      })),
+      byUser: byUser.map(u => ({
+        id: u.id, name: u.name, avatarUrl: u.avatar_url,
+        total: u.total, inProgress: u.in_progress, todo: u.todo,
+        overdue: u.overdue, completedToday: u.completed_today,
+        urgentOpen: u.urgent_open, dueToday: u.due_today,
+      })),
+      velocity: velocityDays,
+    });
+  } catch (err) {
+    console.error('[DASHBOARD]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Stats ──────────────────────────────────────────────────────────────────
 
 router.get('/stats', async (req, res) => {
@@ -873,7 +1105,7 @@ router.patch('/:id', async (req, res) => {
   }
   if (denyPrivateAccess(existing, req.user.id, res)) return;
 
-  const { status, priority } = req.body;
+  const { status, priority, assignedTo } = req.body;
   const validStatuses = ['todo', 'in_progress', 'done', 'cancelled'];
   const validPriorities = ['low', 'medium', 'high', 'urgent'];
   const updates = [];
@@ -893,6 +1125,15 @@ router.patch('/:id', async (req, res) => {
     }
     updates.push('priority = ?');
     values.push(priority);
+  }
+
+  if ('assignedTo' in req.body) {
+    const newAssignee = assignedTo ? parseInt(assignedTo, 10) : null;
+    if (assignedTo && isNaN(newAssignee)) {
+      return res.status(400).json({ errors: ['assignedTo must be a valid user ID or null'] });
+    }
+    updates.push('assigned_to = ?');
+    values.push(newAssignee);
   }
 
   if (updates.length === 0) {
@@ -918,6 +1159,19 @@ router.patch('/:id', async (req, res) => {
 
   if (priority && priority !== existing.priority) {
     await addSystemComment(existing.id, req.user.id, `${req.user.name} changed priority from ${existing.priority} to ${priority}`);
+  }
+
+  if ('assignedTo' in req.body) {
+    const newAssignee = assignedTo ? parseInt(assignedTo, 10) : null;
+    const oldAssigneeName = existing.assigned_to
+      ? (await db.prepare('SELECT name FROM users WHERE id = ?').get(existing.assigned_to))?.name || 'someone'
+      : 'nobody';
+    const newAssigneeName = newAssignee
+      ? (await db.prepare('SELECT name FROM users WHERE id = ?').get(newAssignee))?.name || 'someone'
+      : 'nobody';
+    if (newAssignee !== existing.assigned_to) {
+      await addSystemComment(existing.id, req.user.id, `${req.user.name} reassigned from ${oldAssigneeName} to ${newAssigneeName}`);
+    }
   }
 
   const task = await db.prepare(`
