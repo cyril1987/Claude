@@ -1,4 +1,23 @@
 let currentUser = null;
+let avatarMap = {};
+
+/**
+ * Get avatar HTML for any user by ID.
+ * Returns <img> if avatar exists in the map, otherwise an initials placeholder.
+ * @param {number} userId
+ * @param {string} [name] - user's display name (for initials fallback)
+ * @param {string} [extraClass] - additional CSS class(es) for the element
+ */
+function getAvatarHtml(userId, name, extraClass) {
+  const url = avatarMap[userId];
+  const cls = extraClass ? `task-avatar ${extraClass}` : 'task-avatar';
+  const plCls = extraClass ? `task-avatar-placeholder ${extraClass}` : 'task-avatar-placeholder';
+  if (url) {
+    return `<img class="${cls}" src="${escapeHtml(url)}" alt="" referrerpolicy="no-referrer">`;
+  }
+  const initial = (name || '?').charAt(0).toUpperCase();
+  return `<span class="${plCls}">${escapeHtml(initial)}</span>`;
+}
 
 async function initAuth() {
   try {
@@ -131,5 +150,14 @@ function route() {
 window.addEventListener('hashchange', route);
 window.addEventListener('DOMContentLoaded', async () => {
   const authed = await initAuth();
-  if (authed) route();
+  if (authed) {
+    // Load avatar map once for the entire session
+    try {
+      avatarMap = await API.get('/tasks/users/avatars');
+    } catch (e) {
+      console.warn('Failed to load avatar map:', e.message);
+      avatarMap = {};
+    }
+    route();
+  }
 });

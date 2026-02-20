@@ -20,7 +20,7 @@ passport.deserializeUser(async (id, done) => {
 // Fetch Microsoft user photo via Graph API and return as base64 data URI
 async function fetchMicrosoftPhoto(accessToken) {
   try {
-    const res = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/photos/48x48/$value', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!res.ok) return null;

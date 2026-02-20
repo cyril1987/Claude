@@ -164,7 +164,7 @@ const TaskDashboard = {
         : '';
 
     const assigneeHtml = showAssignee && task.assignedToName
-      ? `<span class="td-assignee">${escapeHtml(task.assignedToName)}</span>`
+      ? `<span class="td-assignee">${getAvatarHtml(task.assignedTo, task.assignedToName, 'td-row-avatar')} ${escapeHtml(task.assignedToName)}</span>`
       : '';
 
     const catHtml = task.categoryName
@@ -195,6 +195,7 @@ const TaskDashboard = {
           ${byUser.map(u => `
             <div class="td-user-row" data-user-id="${u.id}">
               <div class="td-user-info">
+                ${getAvatarHtml(u.id, u.name, 'td-user-avatar')}
                 <span class="td-user-name">${escapeHtml(u.name)}</span>
                 ${u.overdue > 0 ? `<span class="td-user-badge danger">${u.overdue} overdue</span>` : ''}
                 ${u.dueToday > 0 ? `<span class="td-user-badge warning">${u.dueToday} due today</span>` : ''}

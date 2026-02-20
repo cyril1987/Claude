@@ -82,7 +82,7 @@ const TaskDetail = {
         <div class="stat-card">
           <div class="stat-label">Assigned To</div>
           <div class="stat-value" style="font-size:0.85rem;display:flex;align-items:center;gap:0.35rem;justify-content:center">
-            ${task.assignedToAvatar ? `<img class="task-avatar" src="${escapeHtml(task.assignedToAvatar)}" alt="" referrerpolicy="no-referrer">` : ''}
+            ${task.assignedTo ? getAvatarHtml(task.assignedTo, task.assignedToName) : ''}
             ${task.assignedToName ? escapeHtml(task.assignedToName) : '<span style="color:var(--color-text-tertiary)">Unassigned</span>'}
           </div>
         </div>
@@ -232,7 +232,7 @@ const TaskDetail = {
         ${comments.length > 0 ? comments.map(c => `
           <div class="task-comment">
             <div class="task-comment-header">
-              <span class="task-avatar-placeholder comment-avatar" title="${escapeHtml(c.userName || '?')}">${escapeHtml((c.userName || '?').charAt(0).toUpperCase())}</span>
+              ${getAvatarHtml(c.userId, c.userName, 'comment-avatar')}
               <span class="task-comment-author">${escapeHtml(c.userName || 'Unknown')}</span>
               <span class="task-comment-time">${TaskDetail.formatTime(c.createdAt)}</span>
               ${!c.isSystem && c.userId === currentUser?.id ? `<button class="btn btn-danger btn-sm" style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem" onclick="TaskDetail.deleteComment(${task.id}, ${c.id})">Delete</button>` : ''}

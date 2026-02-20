@@ -19,7 +19,6 @@ function formatTask(row) {
     dueDate: row.due_date || null,
     assignedTo: row.assigned_to || null,
     assignedToName: row.assigned_to_name || null,
-    assignedToAvatar: row.assigned_to_avatar || null,
     createdBy: row.created_by,
     createdByName: row.created_by_name || null,
     categoryId: row.category_id || null,
@@ -79,7 +78,7 @@ async function buildTaskQuery(conditions, params, { limit, offset, sort }) {
 
   const tasksQuery = `
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count,
@@ -305,13 +304,21 @@ router.delete('/categories/:id', async (req, res) => {
 // ─── Users Route (for assignment dropdowns) ─────────────────────────────────
 
 router.get('/users', async (req, res) => {
-  const users = await db.prepare('SELECT id, email, name, avatar_url FROM users ORDER BY name').all();
+  const users = await db.prepare('SELECT id, email, name FROM users ORDER BY name').all();
   res.json(users.map(u => ({
     id: u.id,
     email: u.email,
     name: u.name,
-    avatarUrl: u.avatar_url || null,
   })));
+});
+
+// ─── Avatar Map (lightweight, called once on page load) ─────────────────────
+
+router.get('/users/avatars', async (req, res) => {
+  const users = await db.prepare('SELECT id, avatar_url FROM users WHERE avatar_url IS NOT NULL').all();
+  const map = {};
+  for (const u of users) map[u.id] = u.avatar_url;
+  res.json(map);
 });
 
 // ─── View Counts (for tab badges) ───────────────────────────────────────────
@@ -422,7 +429,7 @@ router.get('/dashboard', async (req, res) => {
     // ── 5. Overdue tasks (up to 20, sorted urgency first) ────────────────────
     const overdueTasks = await db.prepare(`
       SELECT t.id, t.title, t.priority, t.status, t.due_date,
-        t.assigned_to, u.name AS assigned_to_name, u.avatar_url AS assigned_to_avatar,
+        t.assigned_to, u.name AS assigned_to_name,
         c.name AS category_name, c.color AS category_color,
         CAST((julianday('now') - julianday(t.due_date)) AS INTEGER) AS days_overdue
       FROM tasks t
@@ -440,7 +447,7 @@ router.get('/dashboard', async (req, res) => {
     // ── 6. Due today ─────────────────────────────────────────────────────────
     const dueTodayTasks = await db.prepare(`
       SELECT t.id, t.title, t.priority, t.status, t.due_date,
-        t.assigned_to, u.name AS assigned_to_name, u.avatar_url AS assigned_to_avatar,
+        t.assigned_to, u.name AS assigned_to_name,
         c.name AS category_name, c.color AS category_color
       FROM tasks t
       LEFT JOIN users u ON t.assigned_to = u.id
@@ -455,7 +462,7 @@ router.get('/dashboard', async (req, res) => {
     // ── 7. In Progress tasks ──────────────────────────────────────────────────
     const inProgressTasks = await db.prepare(`
       SELECT t.id, t.title, t.priority, t.status, t.due_date,
-        t.assigned_to, u.name AS assigned_to_name, u.avatar_url AS assigned_to_avatar,
+        t.assigned_to, u.name AS assigned_to_name,
         c.name AS category_name, c.color AS category_color
       FROM tasks t
       LEFT JOIN users u ON t.assigned_to = u.id
@@ -488,7 +495,7 @@ router.get('/dashboard', async (req, res) => {
     if (isStandup) {
       byUser = await db.prepare(`
         SELECT
-          u.id, u.name, u.avatar_url,
+          u.id, u.name,
           COUNT(*) AS total,
           SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress,
           SUM(CASE WHEN t.status = 'todo'         THEN 1 ELSE 0 END) AS todo,
@@ -548,17 +555,17 @@ router.get('/dashboard', async (req, res) => {
       overdueTasks: overdueTasks.map(t => ({
         id: t.id, title: t.title, priority: t.priority, status: t.status,
         dueDate: t.due_date, daysOverdue: t.days_overdue,
-        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name, assignedToAvatar: t.assigned_to_avatar,
+        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name,
         categoryName: t.category_name, categoryColor: t.category_color,
       })),
       dueTodayTasks: dueTodayTasks.map(t => ({
         id: t.id, title: t.title, priority: t.priority, status: t.status, dueDate: t.due_date,
-        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name, assignedToAvatar: t.assigned_to_avatar,
+        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name,
         categoryName: t.category_name, categoryColor: t.category_color,
       })),
       inProgressTasks: inProgressTasks.map(t => ({
         id: t.id, title: t.title, priority: t.priority, status: t.status, dueDate: t.due_date,
-        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name, assignedToAvatar: t.assigned_to_avatar,
+        assignedTo: t.assigned_to, assignedToName: t.assigned_to_name,
         categoryName: t.category_name, categoryColor: t.category_color,
       })),
       recentlyCompleted: recentlyCompleted.map(t => ({
@@ -567,7 +574,7 @@ router.get('/dashboard', async (req, res) => {
         categoryName: t.category_name, categoryColor: t.category_color,
       })),
       byUser: byUser.map(u => ({
-        id: u.id, name: u.name, avatarUrl: u.avatar_url,
+        id: u.id, name: u.name,
         total: u.total, inProgress: u.in_progress, todo: u.todo,
         overdue: u.overdue, completedToday: u.completed_today,
         urgentOpen: u.urgent_open, dueToday: u.due_today,
@@ -660,7 +667,7 @@ router.get('/stats', async (req, res) => {
 router.get('/recurring', async (req, res) => {
   const templates = await db.prepare(`
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.recurring_template_id = t.id) AS instance_count
@@ -751,7 +758,7 @@ router.get('/jira/search', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const task = await db.prepare(`
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
@@ -834,7 +841,7 @@ router.post('/', validateTask, async (req, res) => {
 
   const task = await db.prepare(`
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
@@ -934,7 +941,7 @@ router.put('/:id', validateTask, async (req, res) => {
 
   const task = await db.prepare(`
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
@@ -985,7 +992,7 @@ router.post('/:id/toggle-private', async (req, res) => {
 
   const task = await db.prepare(`
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
@@ -1042,7 +1049,7 @@ router.post('/:id/transition', async (req, res) => {
 
   const task = await db.prepare(`
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
@@ -1081,7 +1088,7 @@ router.post('/:id/assign-to-me', async (req, res) => {
 
   const task = await db.prepare(`
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
@@ -1175,7 +1182,7 @@ router.patch('/:id', async (req, res) => {
 
   const task = await db.prepare(`
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
@@ -1233,7 +1240,7 @@ router.post('/:id/link-jira', async (req, res) => {
 
     const task = await db.prepare(`
       SELECT t.*,
-        u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+        u1.name AS assigned_to_name,
         u2.name AS created_by_name,
         c.name AS category_name, c.color AS category_color,
         (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
@@ -1279,7 +1286,7 @@ router.delete('/:id/link-jira', async (req, res) => {
 
   const task = await db.prepare(`
     SELECT t.*,
-      u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+      u1.name AS assigned_to_name,
       u2.name AS created_by_name,
       c.name AS category_name, c.color AS category_color,
       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count
@@ -1332,7 +1339,7 @@ router.post('/:id/sync-jira', async (req, res) => {
 
     const task = await db.prepare(`
       SELECT t.*,
-        u1.name AS assigned_to_name, u1.avatar_url AS assigned_to_avatar,
+        u1.name AS assigned_to_name,
         u2.name AS created_by_name,
         c.name AS category_name, c.color AS category_color,
         (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count

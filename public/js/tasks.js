@@ -234,7 +234,7 @@ const Tasks = {
         ${showAssignCol ? `
           <td onclick="event.stopPropagation()">
             <div class="task-assign-cell">
-              ${task.assignedToAvatar ? `<img class="task-avatar" src="${escapeHtml(task.assignedToAvatar)}" alt="" referrerpolicy="no-referrer">` : '<span class="task-avatar-placeholder">👤</span>'}
+              ${getAvatarHtml(task.assignedTo, task.assignedToName)}
               <select class="task-assign-select" data-task-id="${task.id}">
                 <option value="">Unassigned</option>
                 ${(Tasks.users || []).map(u => `<option value="${u.id}" ${task.assignedTo === u.id ? 'selected' : ''}>${escapeHtml(u.name)}</option>`).join('')}
@@ -377,11 +377,7 @@ const Tasks = {
           const newUser = newUserId ? (Tasks.users || []).find(u => u.id === newUserId) : null;
           const avatarEl = sel.closest('.task-assign-cell').querySelector('.task-avatar, .task-avatar-placeholder');
           if (avatarEl) {
-            if (newUser && newUser.avatarUrl) {
-              avatarEl.outerHTML = `<img class="task-avatar" src="${escapeHtml(newUser.avatarUrl)}" alt="" referrerpolicy="no-referrer">`;
-            } else {
-              avatarEl.outerHTML = `<span class="task-avatar-placeholder">👤</span>`;
-            }
+            avatarEl.outerHTML = getAvatarHtml(newUserId, newUser?.name);
           }
         } catch (err) {
           Modal.alert('Failed to reassign: ' + err.message, 'Error');

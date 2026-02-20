@@ -1883,6 +1883,30 @@ select.staging-cell-input {
   flex-shrink: 0;
   opacity: 1;
 }
+img.comment-avatar {
+  object-fit: cover;
+  background: none;
+}
+/* Task dashboard user avatars */
+.td-user-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+img.td-user-avatar {
+  object-fit: cover;
+}
+.td-row-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+img.td-row-avatar {
+  object-fit: cover;
+}
 
 .task-comment-author {
   font-weight: 600;
