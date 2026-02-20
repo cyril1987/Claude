@@ -159,6 +159,7 @@ const Tasks = {
               <option value="status" ${Tasks.currentSort === 'status' ? 'selected' : ''}>Sort: Status</option>
             </select>
             <input type="text" id="task-search" class="tasks-search-input" placeholder="Search..." value="${escapeHtml(f.search || '')}">
+            <a href="#/tasks/dashboard" class="btn btn-secondary btn-sm" title="Personal dashboard">📊 Dashboard</a>
             <a href="#/tasks/ismart-upload" class="btn btn-secondary btn-sm" title="Upload iSmart tickets">↑ iSmart</a>
             <a href="#/tasks/new" class="btn btn-primary btn-sm">+ New Task</a>
           </div>
