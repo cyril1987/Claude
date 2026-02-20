@@ -357,7 +357,7 @@ const SanityChecks = {
           `}
         </div>
         <div class="dc-row-actions">
-          <button class="dc-btn-run" data-id="${monitor.id}" title="Run now">&#9654;</button>
+          <button class="dc-btn-run" data-id="${monitor.id}" title="Run now">Now?</button>
         </div>
       </a>
     `;
@@ -429,7 +429,7 @@ const SanityChecks = {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.checkNow(btn.dataset.id, app);
+        this.checkNow(btn.dataset.id, btn, app);
       });
     });
 
@@ -538,6 +538,7 @@ const SanityChecks = {
               <option value="900">Every 15 minutes</option>
               <option value="1800">Every 30 minutes</option>
               <option value="3600">Every hour</option>
+              <option value="-1">8 AM, 4 PM &amp; 8 PM</option>
             </select>
           </div>
 
@@ -622,6 +623,7 @@ const SanityChecks = {
       { value: 900, label: 'Every 15 minutes' },
       { value: 1800, label: 'Every 30 minutes' },
       { value: 3600, label: 'Every hour' },
+      { value: -1, label: '8 AM, 4 PM & 8 PM' },
     ];
 
     const overlay = document.createElement('div');
@@ -746,11 +748,65 @@ const SanityChecks = {
     renderModal();
   },
 
-  async checkNow(id, app) {
+  async checkNow(id, btn, app) {
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '...';
+
     try {
-      await API.post(`/sanity-checks/${id}/check`);
-      this.silentRefresh(app);
+      const { monitor, result } = await API.post(`/sanity-checks/${id}/check`);
+
+      // Update the row in-place without a full re-render
+      const row = btn.closest('.dc-row');
+      if (row) {
+        const isFail = result.status === 'fail';
+        const isError = result.status === 'error';
+        const isPass = result.status === 'pass';
+
+        // Status indicator
+        const indicator = row.querySelector('.dc-status-indicator');
+        if (indicator) {
+          indicator.className = `dc-status-indicator dc-status-${isFail ? 'fail' : isError ? 'error' : 'pass'}`;
+        }
+
+        // Row colour class
+        row.classList.remove('dc-row-fail', 'dc-row-error', 'dc-row-pass');
+        row.classList.add(isFail ? 'dc-row-fail' : isError ? 'dc-row-error' : 'dc-row-pass');
+
+        // Value column
+        const valueCol = row.querySelector('.dc-row-value-col');
+        if (valueCol) {
+          const val = result.actualValue;
+          if (val !== null && val !== undefined) {
+            valueCol.innerHTML = `
+              <div class="dc-row-value ${isFail ? 'dc-value-bad' : 'dc-value-ok'}">${this.formatNumber(val)}</div>
+              <div class="dc-row-value-label">${isFail ? 'exceptions' : 'records'}</div>
+            `;
+          } else {
+            valueCol.innerHTML = '<div class="dc-row-value dc-value-none">&mdash;</div>';
+          }
+        }
+
+        // Last checked time
+        const timeEl = row.querySelector('.dc-row-time');
+        if (timeEl) timeEl.textContent = 'just now';
+
+        // Flash the button to show result
+        btn.textContent = isFail ? 'Fail' : isError ? 'Error' : 'Pass';
+        btn.style.color = isFail ? 'var(--color-down)' : isError ? '#f59e0b' : 'var(--color-up)';
+        setTimeout(() => {
+          btn.textContent = origText;
+          btn.style.color = '';
+          btn.disabled = false;
+        }, 2000);
+      } else {
+        btn.textContent = origText;
+        btn.disabled = false;
+        this.silentRefresh(app);
+      }
     } catch (err) {
+      btn.textContent = origText;
+      btn.disabled = false;
       Modal.alert('Check failed: ' + err.message);
     }
   },
@@ -802,6 +858,7 @@ const SanityChecks = {
   },
 
   formatFrequency(seconds) {
+    if (seconds === -1) return '8 AM, 4 PM & 8 PM';
     if (!seconds) return '';
     if (seconds < 60) return `Every ${seconds}s`;
     if (seconds < 3600) return `Every ${Math.floor(seconds / 60)} min`;

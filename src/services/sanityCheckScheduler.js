@@ -16,9 +16,27 @@ function esc(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Returns true if the current time falls within one of the scheduled windows (8AM, 4PM, 8PM IST)
+// We use a ±10-minute window so the scheduler tick (which may run every 30s) doesn't miss a slot.
+function isScheduledTime() {
+  // Get current hour and minute in IST (UTC+5:30)
+  const now = new Date();
+  const istOffset = 5.5 * 60; // minutes
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const istMinutes = (utcMinutes + istOffset) % (24 * 60);
+  const istHour = Math.floor(istMinutes / 60);
+  const istMin = istMinutes % 60;
+  const totalMin = istHour * 60 + istMin;
+
+  // Windows: 8:00, 16:00, 20:00 (±10 min)
+  const slots = [8 * 60, 16 * 60, 20 * 60];
+  return slots.some(slot => Math.abs(totalMin - slot) <= 10);
+}
+
 async function tick() {
   try {
     // Get distinct client URLs that have active monitors due for checking (using env-level frequency)
+    // frequency_seconds = -1 means "scheduled: 8AM, 4PM, 8PM IST"
     const dueClients = await db.prepare(`
       SELECT DISTINCT scm.client_url
       FROM sanity_check_monitors scm
@@ -27,17 +45,39 @@ async function tick() {
       AND (dce.is_active IS NULL OR dce.is_active = 1)
       AND (
         scm.last_checked_at IS NULL
-        OR datetime(scm.last_checked_at, '+' || COALESCE(dce.frequency_seconds, scm.frequency_seconds) || ' seconds') <= datetime('now')
+        OR (
+          COALESCE(dce.frequency_seconds, scm.frequency_seconds) != -1
+          AND datetime(scm.last_checked_at, '+' || COALESCE(dce.frequency_seconds, scm.frequency_seconds) || ' seconds') <= datetime('now')
+        )
+        OR (
+          COALESCE(dce.frequency_seconds, scm.frequency_seconds) = -1
+          AND datetime(scm.last_checked_at, '+20 minutes') <= datetime('now')
+        )
       )
     `).all();
 
     if (dueClients.length === 0) return;
 
-    console.log(`[SANITY-CHECK] ${dueClients.length} client(s) due for check`);
+    // For scheduled (frequency=-1) clients, only proceed if we're in a scheduled window
+    const scheduledNow = isScheduledTime();
+    const clientsToRun = scheduledNow
+      ? dueClients
+      : await (async () => {
+          // Filter out clients that are on the -1 schedule
+          const scheduled = await db.prepare(`
+            SELECT client_url FROM data_check_environments WHERE frequency_seconds = -1
+          `).all();
+          const scheduledUrls = new Set(scheduled.map(r => r.client_url));
+          return dueClients.filter(c => !scheduledUrls.has(c.client_url));
+        })();
+
+    if (clientsToRun.length === 0) return;
+
+    console.log(`[SANITY-CHECK] ${clientsToRun.length} client(s) due for check${scheduledNow ? ' (incl. scheduled)' : ''}`);
 
     const CONCURRENCY = 10;
-    for (let i = 0; i < dueClients.length; i += CONCURRENCY) {
-      const batch = dueClients.slice(i, i + CONCURRENCY);
+    for (let i = 0; i < clientsToRun.length; i += CONCURRENCY) {
+      const batch = clientsToRun.slice(i, i + CONCURRENCY);
       const results = await Promise.allSettled(
         batch.map(client => processClient(client.client_url))
       );

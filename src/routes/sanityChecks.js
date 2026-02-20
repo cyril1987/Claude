@@ -197,7 +197,8 @@ router.post('/environments', async (req, res) => {
     const existing = await db.prepare('SELECT id FROM data_check_environments WHERE client_url = ?').get(cleanUrl);
     if (existing) return res.status(409).json({ error: 'An environment with this URL already exists' });
 
-    const freq = parseInt(frequencySeconds, 10) || 300;
+    const parsedFreq = parseInt(frequencySeconds, 10);
+    const freq = (parsedFreq === -1 || parsedFreq >= 30) ? parsedFreq : 300;
     const userId = primaryUserId ? parseInt(primaryUserId, 10) : null;
 
     // Create the environment
@@ -283,10 +284,9 @@ router.put('/environments/:id', async (req, res) => {
     if (primaryUserId !== undefined) { sets.push('primary_user_id = ?'); params.push(primaryUserId ? parseInt(primaryUserId, 10) : null); }
     if (frequencySeconds !== undefined) {
       const freq = parseInt(frequencySeconds, 10);
-      if (freq >= 30) {
+      if (freq === -1 || freq >= 30) {
         sets.push('frequency_seconds = ?');
         params.push(freq);
-        // Also update all monitors in this environment to match
       }
     }
     if (isActive !== undefined) { sets.push('is_active = ?'); params.push(isActive ? 1 : 0); }
@@ -299,7 +299,7 @@ router.put('/environments/:id', async (req, res) => {
       // If frequency changed, update all monitors in this env
       if (frequencySeconds !== undefined) {
         const freq = parseInt(frequencySeconds, 10);
-        if (freq >= 30) {
+        if (freq === -1 || freq >= 30) {
           await db.prepare('UPDATE sanity_check_monitors SET frequency_seconds = ? WHERE client_url = ?').run(freq, env.client_url);
         }
       }
