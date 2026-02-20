@@ -186,11 +186,10 @@ const SanityChecks = {
       return this.extractEnvName(a).localeCompare(this.extractEnvName(b));
     });
 
-    // Smart defaults: collapsed by default, auto-expand only envs with failures
+    // All environments collapsed by default
     for (const key of envKeys) {
       if (this.expandedEnvironments[key] === undefined) {
-        const envFails = (allByEnv[key] || []).some(m => m.currentStatus === 'fail');
-        this.expandedEnvironments[key] = envFails;
+        this.expandedEnvironments[key] = false;
       }
     }
 
