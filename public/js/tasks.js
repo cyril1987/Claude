@@ -162,8 +162,8 @@ const Tasks = {
           <table class="checks-table tasks-table">
             <thead>
               <tr>
-                <th style="width:120px">Status</th>
-                <th style="width:100px">Priority</th>
+                <th style="width:140px">Status</th>
+                <th style="width:115px">Priority</th>
                 <th>Title</th>
                 ${Tasks.currentView !== 'my' ? '<th style="width:170px">Assigned To</th>' : ''}
                 <th style="width:130px">Category</th>
@@ -188,7 +188,7 @@ const Tasks = {
 
     return `
       <tr class="task-row ${isOverdue ? 'task-overdue' : ''} ${isSubtask ? 'task-row-subtask' : ''}" style="cursor:pointer" onclick="location.hash='#/tasks/${task.id}'">
-        <td onclick="event.stopPropagation()">
+        <td class="task-select-cell" onclick="event.stopPropagation()">
           <select class="task-inline-select task-inline-status task-status-${task.status}" data-task-id="${task.id}" data-field="status">
             <option value="todo" ${task.status === 'todo' ? 'selected' : ''}>to do</option>
             <option value="in_progress" ${task.status === 'in_progress' ? 'selected' : ''}>in progress</option>
@@ -196,7 +196,7 @@ const Tasks = {
             <option value="cancelled" ${task.status === 'cancelled' ? 'selected' : ''}>cancelled</option>
           </select>
         </td>
-        <td onclick="event.stopPropagation()">
+        <td class="task-select-cell" onclick="event.stopPropagation()">
           <select class="task-inline-select task-inline-priority task-priority-${task.priority}" data-task-id="${task.id}" data-field="priority">
             <option value="urgent" ${task.priority === 'urgent' ? 'selected' : ''}>urgent</option>
             <option value="high" ${task.priority === 'high' ? 'selected' : ''}>high</option>

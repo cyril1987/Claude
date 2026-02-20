@@ -1593,6 +1593,11 @@ select.staging-cell-input {
   color: var(--color-text-tertiary);
 }
 
+/* Reduce padding on status/priority cells so select has room */
+.task-select-cell {
+  padding: 0.4rem 0.5rem !important;
+}
+
 /* Inline select dropdowns (task list) */
 .task-inline-select {
   -webkit-appearance: none;
