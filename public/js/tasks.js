@@ -74,8 +74,10 @@ const Tasks = {
   },
 
   renderSummaryBar(stats) {
+    const showCompleted = Tasks.currentFilters.hideCompleted === false;
+    const cols = showCompleted ? 6 : 4;
     return `
-      <div class="summary-bar" style="grid-template-columns: repeat(5, 1fr)">
+      <div class="summary-bar" style="grid-template-columns: repeat(${cols}, 1fr)">
         <div class="summary-stat">
           <div class="label">Total</div>
           <div class="value">${stats.total}</div>
@@ -88,10 +90,15 @@ const Tasks = {
           <div class="label">In Progress</div>
           <div class="value" style="color: var(--color-primary)">${stats.inProgress}</div>
         </div>
+        ${showCompleted ? `
         <div class="summary-stat">
           <div class="label">Done</div>
           <div class="value" style="color: var(--color-up)">${stats.done}</div>
         </div>
+        <div class="summary-stat">
+          <div class="label">Cancelled</div>
+          <div class="value" style="color: var(--color-text-tertiary)">${stats.cancelled}</div>
+        </div>` : ''}
         <div class="summary-stat">
           <div class="label">Overdue</div>
           <div class="value" style="color: var(--color-down)">${stats.overdue}</div>
