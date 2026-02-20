@@ -357,7 +357,7 @@ const SanityChecks = {
           `}
         </div>
         <div class="dc-row-actions">
-          <button class="dc-btn-run" data-id="${monitor.id}" title="Run now">Now?</button>
+          <button class="dc-btn-run" data-id="${monitor.id}" title="Run now">▶</button>
         </div>
       </a>
     `;
