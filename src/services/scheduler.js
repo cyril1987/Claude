@@ -3,7 +3,6 @@ const { checkMonitor } = require('./checker');
 const { evaluateAndNotify } = require('./notifier');
 const taskScheduler = require('./taskScheduler');
 const sanityCheckScheduler = require('./sanityCheckScheduler');
-const { checkDueSoonTasks, checkOverdueTasks } = require('./taskNotifier');
 const config = require('../config');
 
 let running = false;
@@ -82,14 +81,6 @@ async function tick() {
       await taskScheduler.tick();
     } catch (err) {
       console.error('[SCHEDULER] Task scheduler error:', err);
-    }
-
-    // Check for task deadline notifications
-    try {
-      await checkDueSoonTasks();
-      await checkOverdueTasks();
-    } catch (err) {
-      console.error('[SCHEDULER] Task notification error:', err);
     }
 
     // Run due sanity checks (trigger clients, poll results, evaluate)

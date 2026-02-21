@@ -118,13 +118,9 @@ async function notifyStatusChange(task, oldStatus, newStatus, changedByName) {
 }
 
 // ─── Check for tasks due soon (within 24 hours, grouped per user) ───────────
-
-let lastDueSoonCheck = 0;
+// Called by Vercel cron: once daily at 12:00 PM IST
 
 async function checkDueSoonTasks() {
-  // Throttle to once per hour
-  if (Date.now() - lastDueSoonCheck < 3600000) return;
-  lastDueSoonCheck = Date.now();
 
   const tasks = await db.prepare(`
     SELECT t.*, u.email AS user_email, u.name AS user_name
@@ -145,7 +141,7 @@ async function checkDueSoonTasks() {
     const recent = await db.prepare(`
       SELECT COUNT(*) AS count FROM task_notifications
       WHERE task_id = ? AND type = ?
-      AND sent_at > datetime('now', '-1 hour')
+      AND sent_at > datetime('now', '-20 hours')
     `).get(task.id, 'due_soon');
     if (recent.count > 0) continue;
 
@@ -156,6 +152,7 @@ async function checkDueSoonTasks() {
   }
 
   // Send one grouped email per user
+  let sentCount = 0;
   for (const userId of Object.keys(byUser)) {
     const { email, name, tasks: dueSoonTasks } = byUser[userId];
     if (dueSoonTasks.length === 0) continue;
@@ -190,21 +187,19 @@ async function checkDueSoonTasks() {
         ).run(t.id, 'due_soon', email, JSON.stringify({ dueDate: t.due_date, grouped: true, groupSize: dueSoonTasks.length }));
       }
 
+      sentCount++;
       console.log(`[TASK-NOTIFY] Grouped due-soon notification (${dueSoonTasks.length} tasks) sent to ${email}`);
     } catch (err) {
       console.error(`[TASK-NOTIFY] Failed to send grouped due-soon notification to ${email}:`, err.message);
     }
   }
+  return sentCount;
 }
 
 // ─── Check for overdue tasks (grouped per user) ─────────────────────────────
-
-let lastOverdueCheck = 0;
+// Called by Vercel cron: 10:00 AM IST and 6:00 PM IST
 
 async function checkOverdueTasks() {
-  // Throttle to once per hour
-  if (Date.now() - lastOverdueCheck < 3600000) return;
-  lastOverdueCheck = Date.now();
 
   const tasks = await db.prepare(`
     SELECT t.*, u.email AS user_email, u.name AS user_name
@@ -221,11 +216,11 @@ async function checkOverdueTasks() {
   for (const task of tasks) {
     if (!(await shouldNotify(task.assigned_to, 'overdue'))) continue;
 
-    // Check if already notified for this task recently
+    // Check if already notified for this task recently (4h window, runs at 10AM & 6PM)
     const recent = await db.prepare(`
       SELECT COUNT(*) AS count FROM task_notifications
       WHERE task_id = ? AND type = ?
-      AND sent_at > datetime('now', '-1 hour')
+      AND sent_at > datetime('now', '-4 hours')
     `).get(task.id, 'overdue');
     if (recent.count > 0) continue;
 
@@ -236,6 +231,7 @@ async function checkOverdueTasks() {
   }
 
   // Send one grouped email per user
+  let sentCount = 0;
   for (const userId of Object.keys(byUser)) {
     const { email, name, tasks: overdueTasks } = byUser[userId];
     if (overdueTasks.length === 0) continue;
@@ -271,11 +267,13 @@ async function checkOverdueTasks() {
         ).run(t.id, 'overdue', email, JSON.stringify({ dueDate: t.due_date, grouped: true, groupSize: overdueTasks.length }));
       }
 
+      sentCount++;
       console.log(`[TASK-NOTIFY] Grouped overdue notification (${overdueTasks.length} tasks) sent to ${email}`);
     } catch (err) {
       console.error(`[TASK-NOTIFY] Failed to send grouped overdue notification to ${email}:`, err.message);
     }
   }
+  return sentCount;
 }
 
 module.exports = { notifyAssignment, notifyStatusChange, checkDueSoonTasks, checkOverdueTasks };
