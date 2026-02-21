@@ -502,6 +502,105 @@ function dataCheckRecovered({ monitorName, code, clientUrl, actualValue, previou
   });
 }
 
+/**
+ * Daily digest email
+ */
+function dailyDigest({ recipientName, overdue, dueSoon, upcoming, totalOpen }) {
+  function taskRow(t, dueLabelColor) {
+    const dueLabel = t.due_date
+      ? `<span style="color:${dueLabelColor || C.textMuted};font-size:11px;font-weight:600;">${esc(t.due_date)}</span>`
+      : `<span style="color:${C.textFaint};font-size:11px;">No due date</span>`;
+    return `
+    <tr style="border-bottom:1px solid ${C.cardBorder};">
+      <td style="padding:8px 8px 8px 16px;vertical-align:middle;">
+        <span style="color:${C.textPrimary};font-size:13px;font-weight:600;">${esc(t.title)}</span>
+      </td>
+      <td style="padding:8px;text-align:center;vertical-align:middle;">${priorityChip(t.priority)}</td>
+      <td style="padding:8px;text-align:center;vertical-align:middle;">${statusChip(t.status)}</td>
+      <td style="padding:8px 16px 8px 8px;text-align:right;vertical-align:middle;">${dueLabel}</td>
+    </tr>`;
+  }
+
+  function sectionHeader(icon, label, count, color) {
+    return `
+    <tr>
+      <td colspan="4" style="padding:14px 16px 6px 16px;background-color:${color}10;">
+        <span style="color:${color};font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">${icon} ${esc(label)} (${count})</span>
+      </td>
+    </tr>`;
+  }
+
+  let tableRows = '';
+  if (overdue.length > 0) {
+    tableRows += sectionHeader('🔴', 'Overdue', overdue.length, C.danger);
+    tableRows += overdue.map(t => taskRow(t, C.danger)).join('');
+  }
+  if (dueSoon.length > 0) {
+    tableRows += sectionHeader('🟡', 'Due Today / Tomorrow', dueSoon.length, C.warning);
+    tableRows += dueSoon.map(t => taskRow(t, C.warning)).join('');
+  }
+  if (upcoming.length > 0) {
+    tableRows += sectionHeader('🔵', 'Other Open', upcoming.length, C.info);
+    tableRows += upcoming.map(t => taskRow(t, C.textMuted)).join('');
+  }
+
+  const summaryCards = `
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
+    <tr>
+      <td style="width:33%;padding:0 4px 0 0;">
+        <div style="background-color:${C.danger}15;border:1px solid ${C.danger}30;border-radius:8px;padding:12px;text-align:center;">
+          <div style="color:${C.danger};font-size:22px;font-weight:700;">${overdue.length}</div>
+          <div style="color:${C.textMuted};font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">Overdue</div>
+        </div>
+      </td>
+      <td style="width:33%;padding:0 2px;">
+        <div style="background-color:${C.warning}15;border:1px solid ${C.warning}30;border-radius:8px;padding:12px;text-align:center;">
+          <div style="color:${C.warning};font-size:22px;font-weight:700;">${dueSoon.length}</div>
+          <div style="color:${C.textMuted};font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">Due Soon</div>
+        </div>
+      </td>
+      <td style="width:33%;padding:0 0 0 4px;">
+        <div style="background-color:${C.primary}15;border:1px solid ${C.primary}30;border-radius:8px;padding:12px;text-align:center;">
+          <div style="color:${C.primary};font-size:22px;font-weight:700;">${totalOpen}</div>
+          <div style="color:${C.textMuted};font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">Total Open</div>
+        </div>
+      </td>
+    </tr>
+  </table>`;
+
+  const body = `
+    <p style="margin:0 0 4px 0;color:${C.textMuted};font-size:13px;">Good morning <strong style="color:${C.textPrimary}">${esc(recipientName || 'there')}</strong>,</p>
+    <p style="margin:0 0 16px 0;color:${C.textMuted};font-size:13px;">Here's your daily task summary.</p>
+
+    ${summaryCards}
+
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="background-color:rgba(255,255,255,0.03);border-radius:8px;border:1px solid ${C.cardBorder};">
+      <thead>
+        <tr style="border-bottom:1px solid ${C.cardBorder};">
+          <th style="padding:10px 8px 10px 16px;text-align:left;color:${C.textFaint};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Task</th>
+          <th style="padding:10px 8px;text-align:center;color:${C.textFaint};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Priority</th>
+          <th style="padding:10px 8px;text-align:center;color:${C.textFaint};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Status</th>
+          <th style="padding:10px 16px 10px 8px;text-align:right;color:${C.textFaint};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Due</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRows}
+      </tbody>
+    </table>
+
+    ${overdue.length > 0 ? callout(`<strong>You have ${overdue.length} overdue task${overdue.length !== 1 ? 's' : ''}.</strong> Please address them as soon as possible.`, C.danger) : ''}`;
+
+  return layout({
+    accentColor: overdue.length > 0 ? C.danger : dueSoon.length > 0 ? C.warning : C.primary,
+    badge: 'DAILY DIGEST',
+    badgeColor: C.primary,
+    title: `${totalOpen} open task${totalOpen !== 1 ? 's' : ''} today`,
+    subtitle: new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' }),
+    body,
+  });
+}
+
 module.exports = {
   monitorDown,
   monitorRecovered,
@@ -512,4 +611,5 @@ module.exports = {
   tasksOverdue,
   dataCheckFail,
   dataCheckRecovered,
+  dailyDigest,
 };

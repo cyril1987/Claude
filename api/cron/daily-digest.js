@@ -3,6 +3,7 @@ const { dbReady } = require('../../src/db');
 const db = require('../../src/db');
 const config = require('../../src/config');
 const { sendEmail } = require('../../src/services/emailSender');
+const { dailyDigest } = require('../../src/services/emailTemplates');
 
 module.exports = async (req, res) => {
   // Verify cron secret
@@ -85,7 +86,14 @@ module.exports = async (req, res) => {
         lines.push('');
         lines.push('-- iConcile Pulse');
 
-        await sendEmail({ to: user.email, subject, text: lines.join('\n') });
+        const html = dailyDigest({
+          recipientName: user.name,
+          overdue,
+          dueSoon,
+          upcoming,
+          totalOpen: openTasks.length,
+        });
+        await sendEmail({ to: user.email, subject, text: lines.join('\n'), html });
         sentCount++;
         console.log(`[CRON] Daily digest sent to ${user.email}`);
       } catch (userErr) {
